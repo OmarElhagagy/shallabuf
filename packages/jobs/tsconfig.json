@@ -1,0 +1,5 @@
+{
+  "extends": "@shallabuf/typescript/base.json",
+  "include": ["."],
+  "exclude": ["node_modules"]
+}
