@@ -1,5 +1,5 @@
 [workspace]
-members = ["api", "scheduler", "worker"]
+members = ["api", "db", "scheduler", "worker"]
 resolver = "2"
 
 [profile.dev]

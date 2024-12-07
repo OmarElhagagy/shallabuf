@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: shallabuf
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: shallabuf
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  nats:
+    image: nats:latest
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - nats
+
+  scheduler:
+    build: ./scheduler
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - nats
+
+volumes:
+  postgres_data:

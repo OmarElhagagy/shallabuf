@@ -2,6 +2,9 @@
 /target/
 /Cargo.lock
 
+# Secrets
+.env
+
 # Misc
 *.rs.bk
 *.log
