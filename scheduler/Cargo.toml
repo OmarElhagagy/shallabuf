@@ -7,8 +7,11 @@ edition = "2021"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
-sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "json", "time", "uuid"] }
+sea-orm = { version = "^1.1", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-json", "with-chrono", "with-uuid"] }
 uuid = { version = "^1", features = ["v4", "serde"] }
 async-nats = "^0.38"
 futures = "^0.3"
-db = { git = "https://github.com/patchwork-body/shallabuf.git/db", branch = "main" }
+tracing = "^0.1"
+tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
+petgraph = "^0.6"
+db = { path = "../db" }

@@ -1,17 +1,23 @@
 FROM docker.io/rust:1-slim-bookworm AS build
 
 ## cargo package name
-ARG pkg=scheduler
+ARG pkg=api
 
 WORKDIR /build
 
+# Install dependencies
+RUN apt-get update && apt-get install -y pkg-config libssl-dev
+
 COPY . .
+
+# Clear cargo registry cache to prevent corruption
+RUN rm -rf /usr/local/cargo/registry
 
 RUN --mount=type=cache,target=/build/target \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     set -eux; \
-    cargo build --release; \
+    cargo build --bin $pkg --release; \
     objcopy --compress-debug-sections target/release/$pkg ./main
 
 ################################################################################
@@ -20,7 +26,15 @@ FROM docker.io/debian:bookworm-slim
 
 WORKDIR /app
 
-## copy the main binary
+## Install OpenSSL libraries
+RUN apt-get update && apt-get install -y libssl3
+
 COPY --from=build /build/main ./
+COPY --from=build /build/Rocket.toml ./
+
+## Ensure the container listens globally on port 8000
+ENV LOG_LEVEL=debug
+ENV ROCKET_ADDRESS=0.0.0.0
+ENV ROCKET_PORT=8000
 
 CMD ./main

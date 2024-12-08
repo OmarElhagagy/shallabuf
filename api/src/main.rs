@@ -1,70 +1,127 @@
 use async_nats::{self, jetstream};
-use rocket::serde::json::Json;
-use rocket::serde::Serialize;
+use db::dtos::{self, PipelineExecPayloadParams};
+use db::{
+    entities::{pipeline_exec, sea_orm_active_enums::ExecStatus},
+    seed::seed_database,
+    MigratorTrait,
+};
+use pool::Db;
+use rocket::{fairing, serde::Serialize, Build, Rocket};
+use rocket::{fairing::AdHoc, serde::json::Json};
 use rocket::{http::Status, State};
-use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
+use sea_orm::{ActiveValue::Set, EntityTrait};
+use sea_orm_rocket::{Connection, Database};
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
+
+mod pool;
 
 #[macro_use]
 extern crate rocket;
 
 static JETSTREAM_NAME: &str = "PIPELINE_ACTIONS";
 
-#[derive(Serialize, sqlx::FromRow)]
+#[derive(Serialize)]
 struct PipelineTriggerResponse {
-    id: Uuid,
+    pipeline_exec_id: Uuid,
 }
 
-#[post("/trigger/pipeline/<id>", format = "json", data = "<params>")]
+#[post("/trigger/pipelines/<id>", format = "json", data = "<params>")]
 async fn trigger_pipeline(
     id: &str,
-    db: &State<Pool<Postgres>>,
+    conn: Connection<'_, Db>,
     stream: &State<jetstream::Context>,
-    params: Json<serde_json::Value>,
+    params: Json<PipelineExecPayloadParams>,
 ) -> Result<Json<PipelineTriggerResponse>, Status> {
-    let pipeline_id = Uuid::parse_str(id).map_err(|_| Status::BadRequest)?;
+    info!("Received request to trigger pipeline with id: {id}");
+    let db = conn.into_inner();
 
-    let result = sqlx::query_as::<Postgres, PipelineTriggerResponse>(
-        "INSERT INTO pipeline_exec (pipeline_id, status) VALUES (?, ?) RETURNING id",
-    )
-    .bind(pipeline_id)
-    .bind("Pending")
-    .fetch_one(db.inner())
+    let pipeline_id = Uuid::parse_str(id).map_err(|_| {
+        warn!("Invalid UUID format for pipeline id: {id}");
+        Status::BadRequest
+    })?;
+
+    let pipeline_exec = pipeline_exec::Entity::insert(pipeline_exec::ActiveModel {
+        pipeline_id: Set(pipeline_id),
+        status: Set(ExecStatus::Pending),
+        ..Default::default()
+    })
+    .exec(db)
     .await
-    .map(Json)
-    .map_err(|_| Status::InternalServerError);
+    .map_err(|error| {
+        error!("Database error: {error:?}");
+        Status::InternalServerError
+    })?;
 
-    if let Ok(response) = &result {
-        let payload = serde_json::json!({
-            "pipeline_exec_id": response.id.to_string(),
-            "pipeline_id": pipeline_id.to_string(),
-            "params": params.into_inner(),
-        })
-        .to_string()
-        .into_bytes();
+    info!(
+        "Pipeline execution record created with id: {}",
+        pipeline_exec.last_insert_id
+    );
 
-        stream
-            .publish("pipeline.exec", payload.into())
-            .await
-            .expect("Failed to publish message to JetStream");
+    let payload = serde_json::to_string(&dtos::PipelineExecPayload {
+        pipeline_id,
+        pipeline_exec_id: pipeline_exec.last_insert_id,
+        params: params.into_inner(),
+    })
+    .map_err(|error| {
+        error!("Failed to serialize payload: {error:?}");
+        Status::InternalServerError
+    })?
+    .into_bytes();
+
+    if let Err(error) = stream.publish("pipeline.exec", payload.into()).await {
+        error!("Failed to publish message to JetStream: {error:?}");
+    } else {
+        debug!(
+            "Published message to JetStream for pipeline_exec_id: {}",
+            pipeline_exec.last_insert_id
+        );
     }
 
-    result
+    Ok(Json(PipelineTriggerResponse {
+        pipeline_exec_id: pipeline_exec.last_insert_id,
+    }))
+}
+
+async fn run_migrations(rocket: Rocket<Build>) -> fairing::Result {
+    let Some(db) = Db::fetch(&rocket) else {
+        return Err(rocket);
+    };
+
+    let conn = &db.conn;
+
+    let rust_env = std::env::var("RUST_ENV").unwrap_or("dev".to_string());
+
+    if rust_env == "dev" {
+        match db::Migrator::fresh(conn).await {
+            Ok(()) => info!("Database freshed successfully"),
+            Err(error) => error!("Failed to fresh database: {error:?}"),
+        };
+
+        match seed_database(conn).await {
+            Ok(()) => info!("Database seeded successfully"),
+            Err(error) => error!("Failed to seed database: {error:?}"),
+        };
+    } else {
+        match db::Migrator::up(conn, None).await {
+            Ok(()) => info!("Database migrated successfully"),
+            Err(error) => error!("Failed to migrate database: {error:?}"),
+        };
+    }
+
+    Ok(rocket)
 }
 
 #[launch]
 async fn rocket() -> _ {
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let max_connections = std::env::var("MAX_CONNECTIONS")
-        .unwrap_or("10".to_string())
-        .parse::<u32>()
-        .expect("MAX_CONNECTIONS must be a number");
+    let filter_layer = EnvFilter::from_default_env();
+    let fmt_layer = fmt::layer().with_target(false).with_line_number(true);
 
-    let pool = PgPoolOptions::new()
-        .max_connections(max_connections)
-        .connect(&database_url)
-        .await
-        .expect("Failed to connect to Postgres");
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer)
+        .init();
 
     let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
     let nats_client = async_nats::connect(nats_url)
@@ -73,18 +130,19 @@ async fn rocket() -> _ {
 
     let jetstream = jetstream::new(nats_client);
 
-    let _ = jetstream
-        .create_stream(jetstream::stream::Config {
+    jetstream
+        .get_or_create_stream(jetstream::stream::Config {
             name: JETSTREAM_NAME.to_string(),
             retention: jetstream::stream::RetentionPolicy::WorkQueue,
             subjects: vec!["pipeline.>".to_string()],
             ..Default::default()
         })
         .await
-        .expect("Failed to create JetStream stream");
+        .expect("Failed to get or create JetStream");
 
     rocket::build()
-        .manage(pool)
         .manage(jetstream)
+        .attach(Db::init())
+        .attach(AdHoc::try_on_ignite("Migrations", run_migrations))
         .mount("/", routes![trigger_pipeline])
 }

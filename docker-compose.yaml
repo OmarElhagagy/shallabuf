@@ -14,10 +14,12 @@ services:
     image: nats:latest
     ports:
       - "4222:4222"
-      - "8222:8222"
+    command: ["-js"]
 
   api:
-    build: ./api
+    build:
+      context: .
+      dockerfile: Dockerfile.api
     ports:
       - "8000:8000"
     env_file:
@@ -27,7 +29,9 @@ services:
       - nats
 
   scheduler:
-    build: ./scheduler
+    build:
+      context: .
+      dockerfile: Dockerfile.scheduler
     env_file:
       - .env
     depends_on:
