@@ -2,7 +2,6 @@ use db::dtos;
 use petgraph::graph::DiGraph;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
-use tracing::info;
 use uuid::Uuid;
 
 #[derive(Clone)]
