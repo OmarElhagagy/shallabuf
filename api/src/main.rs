@@ -59,7 +59,7 @@ async fn trigger_pipeline(
         pipeline_exec.last_insert_id
     );
 
-    let payload = serde_json::to_string(&dtos::PipelineExecPayload {
+    let payload_bytes = serde_json::to_string(&dtos::PipelineExecPayload {
         pipeline_id,
         pipeline_exec_id: pipeline_exec.last_insert_id,
         params: params.into_inner(),
@@ -68,9 +68,9 @@ async fn trigger_pipeline(
         error!("Failed to serialize payload: {error:?}");
         Status::InternalServerError
     })?
-    .into_bytes();
+    .into();
 
-    if let Err(error) = stream.publish("pipeline.exec", payload.into()).await {
+    if let Err(error) = stream.publish("pipeline.exec", payload_bytes).await {
         error!("Failed to publish message to JetStream: {error:?}");
     } else {
         debug!(

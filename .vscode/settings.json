@@ -51,7 +51,8 @@
     "tsbuildinfo",
     "Turborepo",
     "typecheck",
-    "UPSTASH"
+    "UPSTASH",
+    "wasmtime"
   ],
   "rust-analyzer.inlayHints.lifetimeElisionHints.useParameterNames": true,
   "rust-analyzer.inlayHints.closureReturnTypeHints.enable": "always",

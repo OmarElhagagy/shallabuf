@@ -1,7 +1,7 @@
 FROM docker.io/rust:1-slim-bookworm AS build
 
 # Cargo package name
-ARG pkg=scheduler
+ARG pkg=worker
 
 WORKDIR /build
 

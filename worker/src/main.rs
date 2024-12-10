@@ -1,7 +1,9 @@
 use db::dtos;
 use futures::StreamExt;
-use tracing::error;
+use tokio::signal::ctrl_c;
+use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use wasmtime::{Caller, Engine, Linker, Module, Store};
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
@@ -31,8 +33,100 @@ async fn main() -> Result<(), async_nats::Error> {
                         continue;
                     }
                 };
+
+            let engine = Engine::default();
+            let wat = r#"
+                (module
+                    (import "host" "host_func" (func $host_hello (param i32) (result i32)))
+
+                    (func (export "hello") (result i32)
+                        i32.const 3
+                        call $host_hello)
+                )
+            "#;
+
+            let module = match Module::new(&engine, wat) {
+                Ok(module) => module,
+                Err(error) => {
+                    error!("Failed to compile module: {error}");
+                    continue;
+                }
+            };
+
+            let mut linker = Linker::new(&engine);
+
+            match linker.func_wrap(
+                "host",
+                "host_func",
+                |caller: Caller<'_, u32>, param: i32| {
+                    debug!("Got {param} from WebAssembly");
+                    debug!("my host state is: {}", caller.data());
+                    Ok(param)
+                },
+            ) {
+                Ok(_) => {}
+                Err(error) => {
+                    error!("Failed to link host function: {error}");
+                    continue;
+                }
+            }
+
+            let mut store = Store::new(&engine, 4);
+
+            let instance = match linker.instantiate(&mut store, &module) {
+                Ok(instance) => instance,
+                Err(error) => {
+                    error!("Failed to instantiate module: {error}");
+                    continue;
+                }
+            };
+
+            let hello = match instance.get_typed_func::<(), i32>(&mut store, "hello") {
+                Ok(hello) => hello,
+                Err(error) => {
+                    error!("Failed to get typed function: {error}");
+                    continue;
+                }
+            };
+
+            let result = match match hello.call(&mut store, ()) {
+                Ok(wasm_response) => serde_json::to_value(wasm_response),
+                Err(error) => serde_json::to_value(error.to_string()),
+            } {
+                Ok(result) => result,
+                Err(error) => {
+                    error!("Failed to serialize result: {error}");
+                    continue;
+                }
+            };
+
+            let payload_bytes = match serde_json::to_string(&dtos::PipelineNodeExecResultPayload {
+                pipeline_exec_id: payload.pipeline_exec_id,
+                pipeline_node_exec_id: payload.pipeline_node_exec_id,
+                result,
+            }) {
+                Ok(payload) => payload.into(),
+                Err(error) => {
+                    error!("Failed to serialize payload: {error}");
+                    continue;
+                }
+            };
+
+            if let Err(error) = nats_client
+                .publish("pipeline.node.result", payload_bytes)
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                debug!(
+                    "Published message to JetStream for pipeline_node_exec_id {}",
+                    payload.pipeline_node_exec_id
+                );
+            }
         }
     });
+
+    ctrl_c().await?;
 
     Ok(())
 }

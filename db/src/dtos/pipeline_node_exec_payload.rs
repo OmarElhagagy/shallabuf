@@ -1,18 +1,20 @@
-use crate::entities::sea_orm_active_enums::NodeContainerType as NodeContainerTypeActiveEnum;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum NodeContainerType {
+    #[serde(rename = "wasm")]
     Wasm,
+    #[serde(rename = "docker")]
     Docker,
 }
 
-impl From<NodeContainerTypeActiveEnum> for NodeContainerType {
-    fn from(container_type: NodeContainerTypeActiveEnum) -> Self {
-        match container_type {
-            NodeContainerTypeActiveEnum::Wasm => NodeContainerType::Wasm,
-            NodeContainerTypeActiveEnum::Docker => NodeContainerType::Docker,
+impl From<String> for NodeContainerType {
+    fn from(container_type: String) -> Self {
+        match container_type.as_str() {
+            "wasm" => NodeContainerType::Wasm,
+            "docker" => NodeContainerType::Docker,
+            _ => panic!("Invalid container type: {container_type}"),
         }
     }
 }
