@@ -1,10 +1,6 @@
 use async_nats::{self, jetstream};
 use db::dtos::{self, PipelineExecPayloadParams};
-use db::{
-    entities::{pipeline_exec, sea_orm_active_enums::ExecStatus},
-    seed::seed_database,
-    MigratorTrait,
-};
+use db::{entities::pipeline_exec, seed::seed_database, MigratorTrait};
 use pool::Db;
 use rocket::{fairing, serde::Serialize, Build, Rocket};
 use rocket::{fairing::AdHoc, serde::json::Json};
@@ -44,7 +40,6 @@ async fn trigger_pipeline(
 
     let pipeline_exec = pipeline_exec::Entity::insert(pipeline_exec::ActiveModel {
         pipeline_id: Set(pipeline_id),
-        status: Set(ExecStatus::Pending),
         ..Default::default()
     })
     .exec(db)

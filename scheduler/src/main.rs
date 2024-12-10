@@ -1,4 +1,8 @@
-use db::{dtos, ConnectionTrait};
+use db::{
+    dtos::{self, PipelinePlanPayload},
+    entities::sea_orm_active_enums::ExecStatus,
+    ConnectionTrait,
+};
 use db::{
     entities::pipeline_nodes,
     sea_orm::{ConnectOptions, Database},
@@ -13,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
@@ -48,7 +52,7 @@ async fn main() -> Result<(), async_nats::Error> {
 
     let mut options = ConnectOptions::new(database_url);
     options.max_connections(max_connections);
-    let db = Database::connect(options).await?;
+    let db = Arc::new(Database::connect(options).await?);
 
     let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
     let nats_client = async_nats::connect(nats_url)
@@ -59,10 +63,13 @@ async fn main() -> Result<(), async_nats::Error> {
 
     let nats_client_clone = nats_client.clone();
     let runs_clone = Arc::clone(&runs);
+    let db_clone = Arc::clone(&db);
     let mut pipeline_node_exec_result_subscriber =
         nats_client_clone.subscribe("pipeline.node.result").await?;
 
     tokio::spawn(async move {
+        let db = db_clone;
+
         while let Some(message) = pipeline_node_exec_result_subscriber.next().await {
             let payload = match serde_json::from_slice::<dtos::PipelineNodeExecResultPayload>(
                 &message.payload,
@@ -85,48 +92,68 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             };
 
-            pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
-            let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
-
-            if nodes_to_be_executed.is_empty() {
-                info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);
-                continue;
+            match db
+                .query_one(Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    r"
+                        UPDATE
+                            pipeline_nodes_exec
+                        SET
+                            status = $1::exec_status,
+                            result = $2,
+                            finished_at = NOW()
+                        WHERE
+                            id = $3;
+                    ",
+                    [
+                        ExecStatus::Completed.into(),
+                        payload.result.clone().into(),
+                        payload.pipeline_node_exec_id.into(),
+                    ],
+                ))
+                .await
+            {
+                Ok(_) => {}
+                Err(error) => {
+                    error!("Failed to update pipeline node exec status: {error:?}");
+                    continue;
+                }
             }
 
-            for payload in nodes_to_be_executed {
-                info!(
-                    "Publishing message to JetStream for pipeline_node_exec_id: {}",
-                    payload.pipeline_node_exec_id
-                );
+            pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
 
-                let payload_bytes = match serde_json::to_string(&payload) {
-                    Ok(payload) => payload.into(),
-                    Err(error) => {
-                        error!("Failed to serialize payload: {error:?}");
-                        continue;
-                    }
-                };
-
-                if let Err(error) = nats_client_clone
-                    .publish("pipeline.node.exec", payload_bytes)
-                    .await
-                {
-                    error!("Failed to publish message to JetStream: {error:?}");
-                } else {
-                    info!(
-                        "Published message to JetStream for pipeline_node_exec_id: {}",
-                        payload.pipeline_node_exec_id
-                    );
+            let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
+                pipeline_exec_id: payload.pipeline_exec_id,
+            }) {
+                Ok(payload) => payload.into(),
+                Err(error) => {
+                    error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
+                    continue;
                 }
+            };
+
+            if let Err(error) = nats_client_clone
+                .publish("pipeline.plan", payload_bytes)
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                info!(
+                    "Published message to JetStream for pipeline_exec_id: {}",
+                    payload.pipeline_exec_id
+                );
             }
         }
     });
 
     let nats_client_clone = nats_client.clone();
     let runs_clone = Arc::clone(&runs);
+    let db_clone = Arc::clone(&db);
     let mut pipeline_exec_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
 
     tokio::spawn(async move {
+        let db = db_clone;
+
         while let Some(message) = pipeline_exec_subscriber.next().await {
             let payload =
                 match serde_json::from_slice::<dtos::PipelineExecPayload>(&message.payload) {
@@ -136,6 +163,34 @@ async fn main() -> Result<(), async_nats::Error> {
                         continue;
                     }
                 };
+
+            match db
+                .query_one(Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    r"
+                        UPDATE
+                            pipeline_exec
+                        SET
+                            status = $1::exec_status,
+                            started_at = NOW()
+                        WHERE
+                            id = $2;
+                    ",
+                    [ExecStatus::Running.into(), payload.pipeline_exec_id.into()],
+                ))
+                .await
+            {
+                Ok(_) => {
+                    info!(
+                        "Pipeline execution status updated to 'running', pipeline_exec_id: {}",
+                        payload.pipeline_exec_id
+                    );
+                }
+                Err(error) => {
+                    error!("Failed to insert pipeline execution record: {error:?}");
+                    continue;
+                }
+            }
 
             let pipeline_nodes = match pipeline_nodes::Entity::find()
                 .from_raw_sql(Statement::from_sql_and_values(
@@ -162,7 +217,7 @@ async fn main() -> Result<(), async_nats::Error> {
                     [payload.pipeline_id.into()],
                 ))
                 .into_model::<PipelineNodesWithConnections>()
-                .all(&db)
+                .all(&*db)
                 .await
             {
                 Ok(nodes) => nodes,
@@ -291,18 +346,130 @@ async fn main() -> Result<(), async_nats::Error> {
             let mut runs = runs_clone.write().await;
             runs.insert(payload.pipeline_exec_id, pipeline_run.clone());
 
+            let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
+                pipeline_exec_id: payload.pipeline_exec_id,
+            }) {
+                Ok(payload) => payload.into(),
+                Err(error) => {
+                    error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
+                    continue;
+                }
+            };
+
+            if let Err(error) = nats_client_clone
+                .publish("pipeline.plan", payload_bytes)
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                info!(
+                    "Published message to JetStream for pipeline_exec_id: {}",
+                    payload.pipeline_exec_id
+                );
+            }
+        }
+    });
+
+    let nats_client_clone = nats_client.clone();
+    let runs_clone = Arc::clone(&runs);
+    let db_clone = Arc::clone(&db);
+    let mut pipeline_plan_subscriber = nats_client_clone.subscribe("pipeline.plan").await?;
+
+    tokio::spawn(async move {
+        let db = db_clone;
+
+        while let Some(message) = pipeline_plan_subscriber.next().await {
+            let payload =
+                match serde_json::from_slice::<dtos::PipelinePlanPayload>(&message.payload) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        error!("Failed to deserialize message payload: {error:?}");
+                        continue;
+                    }
+                };
+
+            let runs = runs_clone.read().await;
+
+            let Some(pipeline_run) = runs.get(&payload.pipeline_exec_id) else {
+                error!(
+                    "Pipeline run not found for ID: {}",
+                    payload.pipeline_exec_id
+                );
+
+                continue;
+            };
+
             let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
 
             if nodes_to_be_executed.is_empty() {
-                // TODO: Publish pipeline run finished event (pipeline_exec_id) to JetStream and update pipeline_exec status
-                // TODO: (maybe we need to indicate that pipeline isn't configured properly)
-                debug!("Pipeline run is already finished");
+                info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);
+
+                match db
+                    .query_one(Statement::from_sql_and_values(
+                        sea_orm::DatabaseBackend::Postgres,
+                        r"
+                            UPDATE
+                                pipeline_exec
+                            SET
+                                status = $1::exec_status,
+                                finished_at = NOW()
+                            WHERE
+                                id = $2;
+                        ",
+                        [
+                            ExecStatus::Completed.into(),
+                            payload.pipeline_exec_id.into(),
+                        ],
+                    ))
+                    .await
+                {
+                    Ok(_) => {
+                        info!("Pipeline execution status updated to 'completed', pipeline_exec_id: {}", payload.pipeline_exec_id);
+                    }
+                    Err(error) => {
+                        error!(
+                            "Failed to update pipeline execution status, error {error:?}, pipeline_exec_id: {}",
+                            payload.pipeline_exec_id
+                        );
+                    }
+                }
+
                 continue;
+            }
+
+            match db
+                .query_all(Statement::from_sql_and_values(
+                    sea_orm::DatabaseBackend::Postgres,
+                    r"
+                        UPDATE
+                            pipeline_nodes_exec
+                        SET
+                            status = $1::exec_status,
+                            started_at = NOW()
+                        WHERE
+                            id = ANY($2);
+                    ",
+                    [
+                        ExecStatus::Running.into(),
+                        nodes_to_be_executed
+                            .iter()
+                            .map(|payload| payload.pipeline_node_exec_id)
+                            .collect::<Vec<_>>()
+                            .into(),
+                    ],
+                ))
+                .await
+            {
+                Ok(_) => {}
+                Err(error) => {
+                    error!("Failed to update pipeline nodes exec status: {error:?}");
+                    continue;
+                }
             }
 
             for payload in nodes_to_be_executed {
                 info!(
-                    "Publishing message to JetStream for pipeline_node_id: {}",
+                    "Publishing message to JetStream for pipeline_node_exec_id: {}",
                     payload.pipeline_node_exec_id
                 );
 
