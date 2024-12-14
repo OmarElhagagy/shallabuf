@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO nodes (name, description, publisher_name, container_type, config)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        {
+          "Custom": {
+            "name": "node_container_type",
+            "kind": {
+              "Enum": [
+                "wasm",
+                "docker"
+              ]
+            }
+          }
+        },
+        "Json"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f3c2e9fb16481b06f01307141e70bb4e0dabc64a63381bc789f3464d07d237f0"
+}

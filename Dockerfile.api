@@ -1,12 +1,12 @@
 FROM docker.io/rust:1-slim-bookworm AS build
 
-## cargo package name
+# Cargo package name
 ARG pkg=api
 
 WORKDIR /build
 
 # Install dependencies
-RUN apt-get update && apt-get install -y pkg-config libssl-dev
+RUN apt-get update && apt-get install -y build-essential pkg-config libssl-dev
 
 COPY . .
 
@@ -26,15 +26,9 @@ FROM docker.io/debian:bookworm-slim
 
 WORKDIR /app
 
-## Install OpenSSL libraries
-RUN apt-get update && apt-get install -y libssl3
+# Install OpenSSL libraries
+RUN apt-get update && apt-get install -y build-essential pkg-config libssl-dev
 
 COPY --from=build /build/main ./
-COPY --from=build /build/Rocket.toml ./
-
-## Ensure the container listens globally on port 8000
-ENV LOG_LEVEL=debug
-ENV ROCKET_ADDRESS=0.0.0.0
-ENV ROCKET_PORT=8000
 
 CMD ./main

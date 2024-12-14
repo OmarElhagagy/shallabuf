@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO organizations (name)\n        VALUES ($1)\n        RETURNING id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "7ba034ae50f78d332ad8a4b3178521949ddc688f6a081e142a55ae6ac38c7c61"
+}
