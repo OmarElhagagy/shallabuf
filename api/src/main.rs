@@ -1,38 +1,24 @@
-use app_state::{AppState, Broadcast, DatabaseConnection, JetStream, RedisConnection, WsAction};
+use app_state::{AppState, Broadcast, DatabaseConnection, JetStream, WsAction};
 use async_nats::{self, jetstream};
 use axum::{
-    extract::{
-        ws::{self, Message, WebSocket, WebSocketUpgrade},
-        Extension, Path, State,
-    },
+    extract::{Path, State},
     http::StatusCode,
-    response::IntoResponse,
     routing::{get, post},
-    Error, Json, Router,
+    Json, Router,
 };
 use db::dtos::PipelineExecPayloadParams;
 use db::seed::seed_database;
 use dotenvy::dotenv;
-use redis::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use sqlx::{
-    pool::PoolConnection,
-    postgres::{PgListener, PgPool, PgPoolOptions},
-    FromRow, Postgres,
-};
-use std::net::SocketAddr;
-use std::{collections::HashSet, sync::Arc};
-use tokio::{
-    io,
-    sync::{broadcast, Mutex},
-};
+use sqlx::postgres::{PgPool, PgPoolOptions};
+use tokio::{io, sync::broadcast};
 use tower_http::cors::CorsLayer;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
 mod app_state;
+mod routes;
 
 static JETSTREAM_NAME: &str = "PIPELINE_ACTIONS";
 
@@ -58,12 +44,19 @@ struct PipelineConnection {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PipelineParticipant {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
 struct Pipeline {
     id: Uuid,
     name: String,
     description: Option<String>,
     nodes: Vec<PipelineNode>,
     connections: Vec<PipelineConnection>,
+    participants: Vec<PipelineParticipant>,
 }
 
 async fn pipelines(
@@ -87,6 +80,7 @@ async fn pipelines(
                 description: row.description.clone(),
                 nodes: vec![],
                 connections: vec![],
+                participants: vec![],
             })
             .collect::<Vec<Pipeline>>()
     })
@@ -96,83 +90,6 @@ async fn pipelines(
     })?;
 
     Ok(Json(pipelines))
-}
-
-async fn pipeline_details(
-    DatabaseConnection(mut conn): DatabaseConnection,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Pipeline>, StatusCode> {
-    let pipeline = sqlx::query!(
-        r#"
-        SELECT
-            p.id AS pipeline_id, p.name, p.description,
-            pn.id AS node_id, pn.node_id AS node_node_id, pn.node_version, pn.trigger_id, pn.coords,
-            pc.id AS connection_id, pc.from_node_id, pc.to_node_id
-        FROM
-            pipelines p
-        LEFT JOIN
-            pipeline_nodes pn ON pn.pipeline_id = p.id
-        LEFT JOIN
-            pipeline_nodes_connections pc ON pc.from_node_id = pn.id OR pc.to_node_id = pn.id
-        WHERE
-            p.id = $1
-        "#,
-        id
-    )
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(|error| {
-        error!("Database error: {error:?}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    if pipeline.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
-    let mut seen_nodes = HashSet::new();
-    let nodes = pipeline
-        .iter()
-        .filter_map(|row| {
-            if seen_nodes.insert(row.node_id) {
-                Some(PipelineNode {
-                    id: row.node_id,
-                    node_id: row.node_node_id,
-                    node_version: row.node_version.clone(),
-                    trigger_id: row.trigger_id,
-                    coords: row.coords.clone(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let mut seen_connections = HashSet::new();
-    let connections = pipeline
-        .iter()
-        .filter_map(|row| {
-            if seen_connections.insert(row.connection_id) {
-                Some(PipelineConnection {
-                    id: row.connection_id,
-                    from_node_id: row.from_node_id,
-                    to_node_id: row.to_node_id,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let pipeline = Pipeline {
-        id: pipeline[0].pipeline_id,
-        name: pipeline[0].name.clone(),
-        description: pipeline[0].description.clone(),
-        nodes,
-        connections,
-    };
-
-    Ok(Json(pipeline))
 }
 
 async fn update_pipeline_node(
@@ -281,126 +198,10 @@ async fn trigger_pipeline(
     }))
 }
 
-async fn ws_events(
-    ws: WebSocketUpgrade,
-    DatabaseConnection(conn): DatabaseConnection,
-    RedisConnection(redis): RedisConnection,
-    State(sender): State<Broadcast>,
-) -> impl IntoResponse {
-    let sender_id = Uuid::new_v4(); // Assign unique ID for this connection
-    ws.on_upgrade(move |socket| handle_ws_events(socket, conn, redis, sender.0, sender_id))
-}
-
-async fn handle_ws_events(
-    mut socket: WebSocket,
-    conn: PoolConnection<Postgres>,
-    redis: Client,
-    sender: broadcast::Sender<WsAction>,
-    sender_id: Uuid,
-) {
-    let mut receiver = sender.subscribe();
-
-    loop {
-        tokio::select! {
-            res = socket.recv() => {
-                match res {
-                    Some(Ok(ws::Message::Text(message))) => {
-                        if let Ok(mut message) = serde_json::from_str::<WsAction>(&message) {
-                            match message {
-                                WsAction::UpdateNode(ref mut update) => {
-                                    update.payload.sender_id = Some(sender_id);
-
-                                    if let Err(error) = sender.send(WsAction::UpdateNode(update.clone())) {
-                                        error!("Failed to broadcast message: {error:?}");
-                                    } else {
-                                        debug!("Broadcasted message: {update:?}");
-                                    }
-                                }
-                                WsAction::AddEditorParticipant(ref update) => {
-                                    let value = json!({
-                                        "action": "add_editor_participant",
-                                        "payload": {
-                                            "pipeline_id": update.pipeline_id,
-                                            "user_id": update.user_id,
-                                            "name": update.name,
-                                        },
-                                    });
-
-                                    if let Ok(text) = serde_json::to_string(&value) {
-                                        if let Err(error) = socket.send(Message::Text(text)).await {
-                                            error!("Failed to send message to WebSocket: {error:?}");
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Some(Ok(_)) => {}
-                    Some(Err(error)) => tracing::debug!("client disconnected abruptly: {error}"),
-                    None => break,
-                }
-            },
-            res = receiver.recv() => {
-                match res {
-                    Ok(action) => {
-                        match action {
-                            WsAction::UpdateNode(ref update) => {
-                                if let Some(update_sender_id) = update.payload.sender_id {
-                                    if update_sender_id == sender_id {
-                                        continue;
-                                    }
-                                }
-
-                                let value = json!({
-                                    "action": "update_node",
-                                    "payload": {
-                                        "id": update.payload.id,
-                                        "coords": update.payload.coords,
-                                        "sender_id": update.payload.sender_id,
-                                    },
-                                });
-
-                                if let Ok(text) = serde_json::to_string(&value) {
-                                    if let Err(error) = socket.send(Message::Text(text)).await {
-                                        error!("Failed to send message to WebSocket: {error:?}");
-                                        break;
-                                    }
-                                }
-                            }
-                            WsAction::AddEditorParticipant(ref update) => {
-                                let value = json!({
-                                    "action": "add_editor_participant",
-                                    "payload": {
-                                        "pipeline_id": update.pipeline_id,
-                                        "user_id": update.user_id,
-                                        "name": update.name,
-                                    },
-                                });
-
-                                if let Ok(text) = serde_json::to_string(&value) {
-                                    if let Err(error) = socket.send(Message::Text(text)).await {
-                                        error!("Failed to send message to WebSocket: {error:?}");
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        error!("Failed to receive broadcast message: {error:?}");
-                        break;
-                    }
-                }
-            }
-        }
-    }
-}
-
 async fn run_migrations(pool: PgPool) {
     let rust_env = std::env::var("RUST_ENV").unwrap_or("dev".to_string());
 
-    if (rust_env == "dev") {
+    if rust_env == "dev" {
         if let Err(error) = sqlx::query!("DROP SCHEMA public CASCADE;")
             .execute(&pool)
             .await
@@ -456,31 +257,38 @@ async fn main() -> io::Result<()> {
         .expect("Failed to get or create JetStream");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    let pool = PgPoolOptions::new()
+    let pg_pool = PgPoolOptions::new()
         .connect(&database_url)
         .await
         .expect("Failed to connect to database");
 
-    run_migrations(pool.clone()).await;
+    run_migrations(pg_pool.clone()).await;
 
     let redis_url = std::env::var("REDIS_URL").expect("REDIS_URL must be set");
-    let redis_client = Client::open(redis_url).expect("Failed to create Redis client");
+    let redis_client = redis::Client::open(redis_url).expect("Failed to create Redis client");
+    let redis_connection_manager = redis::aio::ConnectionManager::new(redis_client)
+        .await
+        .expect("Failed to create Redis connection manager");
 
     let (tx, _rx) = broadcast::channel::<WsAction>(100);
 
     let app_state = AppState {
-        db: pool,
+        db: pg_pool,
+        redis: redis_connection_manager,
         jetstream: JetStream(jetstream),
         broadcast: Broadcast(tx),
-        redis: redis_client,
     };
 
     let app = Router::new()
+        .route("/api/v0/auth/login", post(routes::api::v0::auth::login))
         .route("/api/v0/pipelines", get(pipelines))
-        .route("/api/v0/pipelines/:id", get(pipeline_details))
+        .route(
+            "/api/v0/pipelines/:id",
+            get(routes::api::v0::pipeline::details),
+        )
         .route("/api/v0/trigger/pipelines/:id", post(trigger_pipeline))
         .route("/api/v0/pipeline_nodes/:id", post(update_pipeline_node))
-        .route("/api/v0/ws", get(ws_events))
+        .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
         .with_state(app_state)
         .layer(CorsLayer::permissive());
 

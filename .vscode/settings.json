@@ -25,7 +25,10 @@
     "**/node_modules": true
   },
   "cSpell.words": [
+    "alexpass",
     "biomejs",
+    "bobopass",
+    "bobpass",
     "bunx",
     "chrono",
     "clsx",
@@ -34,6 +37,10 @@
     "dotenv",
     "dotenvy",
     "dtos",
+    "EXAT",
+    "hdel",
+    "hgetall",
+    "hset",
     "jarredsumner",
     "jetstream",
     "lockb",

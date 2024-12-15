@@ -1,8 +1,9 @@
-type Params = Promise<{ id: string }>;
-
 import "@xyflow/react/dist/style.css";
 import type { useEdgesState, useNodesState } from "@xyflow/react";
+import type { Pipeline } from "~/lib/dtos";
 import { Editor } from "./_components/editor";
+
+type Params = Promise<{ id: string }>;
 
 export default async function PipelineDetails(props: { params: Params }) {
 	const params = await props.params;
@@ -36,7 +37,11 @@ export default async function PipelineDetails(props: { params: Params }) {
 				Pipeline {pipeline.name}
 			</h1>
 
-			<Editor nodes={nodes} edges={edges} />
+			<Editor
+				nodes={nodes}
+				edges={edges}
+				participants={pipeline.participants}
+			/>
 		</div>
 	);
 }

@@ -4,9 +4,9 @@ use axum::{
     http::request::Parts,
 };
 use hyper::StatusCode;
-use redis::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Debug;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
@@ -15,7 +15,7 @@ pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
     pub jetstream: JetStream,
     pub broadcast: Broadcast,
-    pub redis: Client,
+    pub redis: redis::aio::ConnectionManager,
 }
 
 pub struct DatabaseConnection(pub sqlx::pool::PoolConnection<sqlx::Postgres>);
@@ -52,31 +52,38 @@ impl FromRef<AppState> for JetStream {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WsPipelineNodeUpdate {
-    pub id: Uuid,
+pub struct PipelineNodeUpdate {
+    pub node_id: Uuid,
     pub coords: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AddEditorParticipant {
+    pub pipeline_id: String,
+    pub user_id: String,
+    pub username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RemoveEditorParticipant {
+    pub pipeline_id: String,
+    pub user_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WsActionPayload<T> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sender_id: Option<Uuid>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AddEditorParticipantPayload {
-    pub pipeline_id: Uuid,
-    pub user_id: Uuid,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UpdateNodePayload {
-    pub payload: WsPipelineNodeUpdate,
+    pub payload: T,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "action")]
 pub enum WsAction {
-    AddEditorParticipant(AddEditorParticipantPayload),
-    UpdateNode(UpdateNodePayload),
+    AddEditorParticipant(WsActionPayload<AddEditorParticipant>),
+    RemoveEditorParticipant(WsActionPayload<RemoveEditorParticipant>),
+    UpdateNode(WsActionPayload<PipelineNodeUpdate>),
 }
 
 #[derive(Clone)]
@@ -88,7 +95,7 @@ impl FromRef<AppState> for Broadcast {
     }
 }
 
-pub struct RedisConnection(pub redis::Client);
+pub struct RedisConnection(pub redis::aio::ConnectionManager);
 
 #[async_trait]
 impl<S> FromRequestParts<S> for RedisConnection

@@ -3,6 +3,16 @@ DROP INDEX IF EXISTS idx_pipeline_nodes_pipeline_id;
 DROP INDEX IF EXISTS idx_pipeline_nodes_connections_from_node_id;
 DROP INDEX IF EXISTS idx_pipeline_nodes_connections_to_node_id;
 
+-- Drop triggers
+DROP TRIGGER IF EXISTS set_updated_at_templates ON templates;
+DROP TRIGGER IF EXISTS set_updated_at_pipelines ON pipelines;
+DROP TRIGGER IF EXISTS set_updated_at_pipeline_triggers ON pipeline_triggers;
+DROP TRIGGER IF EXISTS set_updated_at_nodes ON nodes;
+DROP TRIGGER IF EXISTS set_updated_at_pipeline_exec ON pipeline_exec;
+DROP TRIGGER IF EXISTS set_updated_at_pipeline_nodes ON pipeline_nodes;
+DROP TRIGGER IF EXISTS set_updated_at_pipeline_nodes_exec ON pipeline_nodes_exec;
+DROP TRIGGER IF EXISTS set_updated_at_pipeline_nodes_connections ON pipeline_nodes_connections;
+
 -- Drop tables
 DROP TABLE IF EXISTS pipeline_nodes_connections CASCADE;
 DROP TABLE IF EXISTS pipeline_nodes_exec CASCADE;

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO organizations (name)\n        VALUES ($1)\n        RETURNING id\n        ",
+  "query": "\n        INSERT INTO organizations (id, name)\n        VALUES ($1, $2)\n        RETURNING id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Varchar"
       ]
     },
@@ -18,5 +19,5 @@
       false
     ]
   },
-  "hash": "7ba034ae50f78d332ad8a4b3178521949ddc688f6a081e142a55ae6ac38c7c61"
+  "hash": "05d3f50731c4c244469d59475d74d1ab97c05d8cd00de7c8d6d5f9a947407813"
 }

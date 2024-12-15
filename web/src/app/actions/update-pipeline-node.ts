@@ -5,7 +5,7 @@ export interface UpdatePipelineNodeParams {
 	coords: { x: number; y: number };
 }
 
-export async function updatePipelineNode({
+export async function updatePipelineNodeAction({
 	id,
 	coords,
 }: UpdatePipelineNodeParams) {
