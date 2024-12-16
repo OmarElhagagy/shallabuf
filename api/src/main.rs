@@ -1,4 +1,6 @@
-use app_state::{AppState, Broadcast, DatabaseConnection, JetStream, WsAction};
+use app_state::{
+    AppState, Broadcast, BroadcastEvent, DatabaseConnection, JetStream, WsClientAction,
+};
 use async_nats::{self, jetstream};
 use axum::{
     extract::{Path, State},
@@ -18,7 +20,10 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
 mod app_state;
+mod extractors;
+mod lib;
 mod routes;
+mod utils;
 
 static JETSTREAM_NAME: &str = "PIPELINE_ACTIONS";
 
@@ -270,7 +275,7 @@ async fn main() -> io::Result<()> {
         .await
         .expect("Failed to create Redis connection manager");
 
-    let (tx, _rx) = broadcast::channel::<WsAction>(100);
+    let (tx, _rx) = broadcast::channel::<BroadcastEvent>(100);
 
     let app_state = AppState {
         db: pg_pool,

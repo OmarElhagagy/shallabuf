@@ -8,12 +8,16 @@ use uuid::Uuid;
 
 use crate::{
     app_state::{DatabaseConnection, RedisConnection},
+    extractors::session::Session,
     Pipeline, PipelineConnection, PipelineNode, PipelineParticipant,
 };
+
+use super::events::to_pipeline_participant_redis_key;
 
 pub async fn details(
     DatabaseConnection(mut conn): DatabaseConnection,
     RedisConnection(mut redis): RedisConnection,
+    Session(_): Session,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Pipeline>, StatusCode> {
     let pipeline = sqlx::query!(
@@ -79,7 +83,7 @@ pub async fn details(
         .collect();
 
     let participants: Vec<(String, String)> = redis
-        .hgetall("pipeline:1:participants")
+        .hgetall(to_pipeline_participant_redis_key(id))
         .await
         .map_err(|error| {
             error!("Redis error: {error:?}");

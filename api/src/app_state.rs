@@ -52,42 +52,88 @@ impl FromRef<AppState> for JetStream {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PipelineNodeUpdate {
+#[serde(rename_all = "camelCase")]
+pub struct AuthStatePayload {
+    pub is_authenticated: bool,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct IncludePipelineEditorParticipantPayload {
+    pub pipeline_id: Uuid,
+    pub user_id: Uuid,
+    pub username: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ExcludePipelineEditorParticipantPayload {
+    pub pipeline_id: Uuid,
+    pub user_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BroadcastEventActionPayload<T> {
+    pub payload: T,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(tag = "action")]
+pub enum BroadcastEventAction {
+    AuthState(BroadcastEventActionPayload<AuthStatePayload>),
+    IncludePipelineEditorParticipant(
+        BroadcastEventActionPayload<IncludePipelineEditorParticipantPayload>,
+    ),
+    ExcludePipelineEditorParticipant(
+        BroadcastEventActionPayload<ExcludePipelineEditorParticipantPayload>,
+    ),
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BroadcastEvent {
+    pub sender_id: Uuid,
+    pub action: BroadcastEventAction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthenticatePayload {
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateNodePayload {
     pub node_id: Uuid,
     pub coords: Option<Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AddEditorParticipant {
-    pub pipeline_id: String,
-    pub user_id: String,
-    pub username: String,
+#[serde(rename_all = "camelCase")]
+pub struct EnterPipelineEditorPayload {
+    pub pipeline_id: Uuid,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct RemoveEditorParticipant {
-    pub pipeline_id: String,
-    pub user_id: String,
+#[serde(rename_all = "camelCase")]
+pub struct LeavePipelineEditorPayload {
+    pub pipeline_id: Uuid,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct WsActionPayload<T> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sender_id: Option<Uuid>,
+pub struct WsClientActionPayload<T> {
     pub payload: T,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "snake_case")]
 #[serde(tag = "action")]
-pub enum WsAction {
-    AddEditorParticipant(WsActionPayload<AddEditorParticipant>),
-    RemoveEditorParticipant(WsActionPayload<RemoveEditorParticipant>),
-    UpdateNode(WsActionPayload<PipelineNodeUpdate>),
+pub enum WsClientAction {
+    Authenticate(WsClientActionPayload<AuthenticatePayload>),
+    EnterPipelineEditor(WsClientActionPayload<EnterPipelineEditorPayload>),
+    LeavePipelineEditor(WsClientActionPayload<LeavePipelineEditorPayload>),
+    UpdateNode(WsClientActionPayload<UpdateNodePayload>),
 }
 
 #[derive(Clone)]
-pub struct Broadcast(pub broadcast::Sender<WsAction>);
+pub struct Broadcast(pub broadcast::Sender<BroadcastEvent>);
 
 impl FromRef<AppState> for Broadcast {
     fn from_ref(state: &AppState) -> Self {

@@ -1,4 +1,7 @@
-import type { Participant } from "~/app/pipelines/[id]/_components/editor";
+export interface PipelineParticipant {
+	id: string;
+	name: string;
+}
 
 export interface Pipeline {
 	id: string;
@@ -6,7 +9,7 @@ export interface Pipeline {
 	description?: string;
 	nodes: PipelineNode[];
 	connections: PipelineConnection[];
-	participants: Participant[];
+	participants: PipelineParticipant[];
 }
 
 export interface PipelineNode {

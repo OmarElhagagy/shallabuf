@@ -23,6 +23,8 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     let organization_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let team_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap();
     let pipeline_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174002").unwrap();
+    let alex_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174003").unwrap();
+    let bob_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174004").unwrap();
 
     // Insert into organizations with fixed UUID and fancy name
     let organization = sqlx::query!(
@@ -61,10 +63,11 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let user_alex = sqlx::query!(
         r#"
-        INSERT INTO users (name, email, password_hash, email_verified, organization_id)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (id, name, email, password_hash, email_verified, organization_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
+        alex_id,
         "Alex",
         "alex@mail.com",
         hashed_password, // Replaced bcrypt hash with argon2 hash
@@ -94,10 +97,11 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let user_bob = sqlx::query!(
         r#"
-        INSERT INTO users (name, email, password_hash, email_verified, organization_id)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO users (id, name, email, password_hash, email_verified, organization_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
+        bob_id,
         "Bob",
         "bob@mail.com",
         hashed_password,

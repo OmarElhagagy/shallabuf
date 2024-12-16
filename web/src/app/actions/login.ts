@@ -49,8 +49,7 @@ export async function loginAction(
 		throw new Error("Failed to login");
 	}
 
-	const session = await response.json();
-	console.log(session);
+	const session: Session = await response.json();
 
 	(await cookies()).set("session", session.token, {
 		httpOnly: true,

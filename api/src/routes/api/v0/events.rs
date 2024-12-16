@@ -8,12 +8,16 @@ use axum::{
 use redis::AsyncCommands;
 use sqlx::{pool::PoolConnection, Postgres};
 use tokio::sync::broadcast;
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::app_state::{
-    Broadcast, DatabaseConnection, RedisConnection, RemoveEditorParticipant, WsAction,
-    WsActionPayload,
+use crate::{
+    app_state::{
+        AuthStatePayload, Broadcast, BroadcastEvent, BroadcastEventAction,
+        BroadcastEventActionPayload, DatabaseConnection, ExcludePipelineEditorParticipantPayload,
+        IncludePipelineEditorParticipantPayload, RedisConnection, WsClientAction,
+    },
+    lib::session::validate_session_token,
 };
 
 pub async fn ws_events(
@@ -22,18 +26,17 @@ pub async fn ws_events(
     RedisConnection(redis): RedisConnection,
     State(sender): State<Broadcast>,
 ) -> impl IntoResponse {
-    let sender_id = Uuid::new_v4(); // Assign unique ID for this connection
-    ws.on_upgrade(move |socket| handle_ws_events(socket, conn, redis, sender.0, sender_id))
+    ws.on_upgrade(move |socket| handle_ws_events(socket, conn, redis, sender.0))
 }
 
 #[allow(clippy::too_many_lines)]
 async fn handle_ws_events(
     mut socket: WebSocket,
-    conn: PoolConnection<Postgres>,
+    mut conn: PoolConnection<Postgres>,
     mut redis: redis::aio::ConnectionManager,
-    sender: broadcast::Sender<WsAction>,
-    sender_id: Uuid,
+    sender: broadcast::Sender<BroadcastEvent>,
 ) {
+    let mut user_id = None::<Uuid>;
     let mut receiver = sender.subscribe();
 
     loop {
@@ -43,150 +46,223 @@ async fn handle_ws_events(
                     Some(Ok(ws::Message::Text(message))) => {
                         debug!("Received message: {message}");
 
-                        if let Ok(mut message) = serde_json::from_str::<WsAction>(&message) {
+                        if let Ok(mut message) = serde_json::from_str::<WsClientAction>(&message) {
                             match message {
-                                WsAction::UpdateNode(ref mut update) => {
-                                    update.sender_id = Some(sender_id);
+                                WsClientAction::Authenticate(ref mut update) => {
+                                    if let Ok(Some(session)) = validate_session_token(redis.clone(), &update.payload.token).await {
+                                        debug!("Authenticated WebSocket connection for user_id: {:?}", session.user_id);
+                                        user_id = Some(session.user_id);
 
-                                    if let Err(error) = sender.send(WsAction::UpdateNode(update.clone())) {
-                                        error!("Failed to broadcast message: {error:?}");
-                                    } else {
-                                        debug!("Broadcasted message: {update:?}");
-                                    }
-                                }
-                                WsAction::AddEditorParticipant(ref mut update) => {
-                                    update.sender_id = Some(sender_id);
-
-                                    debug!("Updating participant: {update:?}");
-
-                                    match redis.hset(
-                                        "pipeline:1:participants".to_string(),
-                                        sender_id.to_string(),
-                                        update.payload.username.clone()
-                                    ).await {
-                                        Ok(()) => {
-                                            debug!("Updated participant: {update:?}");
+                                        match serde_json::to_string(&BroadcastEventAction::AuthState(BroadcastEventActionPayload {
+                                            payload: AuthStatePayload {
+                                                is_authenticated: true,
+                                            },
+                                        })) {
+                                            Ok(text) => {
+                                                if let Err(error) = socket.send(Message::Text(text)).await {
+                                                    error!("Failed to send message to WebSocket: {error:?}");
+                                                    break;
+                                                }
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to serialize message: {error:?}");
+                                            }
                                         }
-                                        Err(error) => {
-                                            error!("Failed to update participant: {error:?}");
-                                        }
+
+                                        continue;
                                     };
 
-                                    if let Err(error) = sender.send(WsAction::AddEditorParticipant(update.clone())) {
-                                        error!("Failed to broadcast message: {error:?}");
-                                    } else {
-                                        debug!("Broadcasted message: {update:?}");
-                                    }
-                                }
-                                WsAction::RemoveEditorParticipant(ref mut update) => {
-                                    update.sender_id = Some(sender_id);
-
-                                    debug!("Removing participant: {update:?}");
-
-                                    match redis.hdel(
-                                        "pipeline:1:participants".to_string(),
-                                        sender_id.to_string()
-                                    ).await {
-                                        Ok(()) => {
-                                            debug!("Removed participant: {update:?}");
+                                    match serde_json::to_string(&BroadcastEventAction::AuthState(BroadcastEventActionPayload {
+                                        payload: AuthStatePayload {
+                                            is_authenticated: false,
+                                        },
+                                    })) {
+                                        Ok(text) => {
+                                            if let Err(error) = socket.send(Message::Text(text)).await {
+                                                error!("Failed to send message to WebSocket: {error:?}");
+                                                break;
+                                            }
                                         }
                                         Err(error) => {
-                                            error!("Failed to remove participant: {error:?}");
+                                            error!("Failed to serialize message: {error:?}");
                                         }
-                                    };
+                                    }
+                                }
+                                WsClientAction::UpdateNode(ref mut update) => {
+                                    // update.sender_id = user_id;
 
-                                    if let Err(error) = sender.send(WsAction::RemoveEditorParticipant(update.clone())) {
-                                        error!("Failed to broadcast message: {error:?}");
+                                    // if let Err(error) = sender.send(WsAction::UpdateNode(update.clone())) {
+                                    //     error!("Failed to broadcast message: {error:?}");
+                                    // } else {
+                                    //     debug!("Broadcasted message: {update:?}");
+                                    // }
+                                }
+                                WsClientAction::EnterPipelineEditor(action) => {
+                                    if let Some(user_id) = user_id {
+                                        let user = match sqlx::query!(
+                                            r#"
+                                            SELECT
+                                                name
+                                            FROM
+                                                users
+                                            WHERE
+                                                id = $1
+                                            "#,
+                                            user_id
+                                        )
+                                        .fetch_one(&mut *conn)
+                                        .await {
+                                            Ok(user) => user,
+                                            Err(error) => {
+                                                error!("Failed to fetch user: {error:?}");
+                                                continue;
+                                            }
+                                        };
+
+                                        match redis.hset(
+                                            to_pipeline_participant_redis_key(action.payload.pipeline_id),
+                                            user_id.to_string(),
+                                            user.name.clone(),
+                                        ).await {
+                                            Ok(()) => {
+                                                debug!("Updated participant: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to update participant: {error:?}");
+                                            }
+                                        };
+
+                                        match redis.sadd(
+                                            to_participant_pipelines_redis_key(user_id),
+                                            action.payload.pipeline_id.to_string(),
+                                        ).await {
+                                            Ok(()) => {
+                                                debug!("Updated participant: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to update participant: {error:?}");
+                                            }
+                                        };
+
+                                        let event = BroadcastEvent {
+                                            sender_id: user_id,
+                                            action: BroadcastEventAction::IncludePipelineEditorParticipant(BroadcastEventActionPayload {
+                                                payload: IncludePipelineEditorParticipantPayload {
+                                                    pipeline_id: action.payload.pipeline_id,
+                                                    user_id,
+                                                    username: user.name,
+                                                },
+                                            }),
+                                        };
+
+                                        match sender.send(event.clone()) {
+                                            Ok(_) => {
+                                                debug!("Broadcasted message: {event:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to broadcast message: {error:?}");
+                                            }
+                                        }
                                     } else {
-                                        debug!("Broadcasted message: {update:?}");
+                                        warn!("WsAction::AddEditorParticipant: User isn't authenticated");
+                                    }
+                                }
+                                WsClientAction::LeavePipelineEditor(action) => {
+                                    if let Some(user_id) = user_id {
+                                        match redis.hdel(
+                                            to_pipeline_participant_redis_key(action.payload.pipeline_id),
+                                            user_id.to_string(),
+                                        ).await {
+                                            Ok(()) => {
+                                                debug!("Removed participant: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to remove participant: {error:?}");
+                                            }
+                                        };
+
+                                        match redis.srem(
+                                            to_participant_pipelines_redis_key(user_id),
+                                            action.payload.pipeline_id.to_string(),
+                                        ).await {
+                                            Ok(()) => {
+                                                debug!("Removed participant: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to remove participant: {error:?}");
+                                            }
+                                        };
+
+                                        let event = BroadcastEvent {
+                                            sender_id: user_id,
+                                            action: BroadcastEventAction::ExcludePipelineEditorParticipant(BroadcastEventActionPayload {
+                                                payload: ExcludePipelineEditorParticipantPayload {
+                                                    pipeline_id: action.payload.pipeline_id,
+                                                    user_id,
+                                                },
+                                            }),
+                                        };
+
+                                        match sender.send(event.clone()) {
+                                            Ok(_) => {
+                                                debug!("Broadcasted message: {event:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to broadcast message: {error:?}");
+                                            }
+                                        }
+                                    } else {
+                                        warn!("WsAction::RemoveEditorParticipant: User isn't authenticated");
                                     }
                                 }
                             }
                         }
                     }
-                    Some(Ok(_)) => {}
-                    Some(Err(error)) => tracing::debug!("client disconnected abruptly: {error}"),
-                    None => {
-                        debug!("WebSocket connection closed for sender_id: {sender_id}");
+                    Some(Ok(_)) => {
+                        warn!("Received non-Text message");
+                    }
+                    Some(Err(error)) => {
+                        error!("Failed to receive message: {error:?}");
 
-                        let update = WsAction::RemoveEditorParticipant(WsActionPayload {
-                            sender_id: None,
-                            payload: RemoveEditorParticipant {
-                                pipeline_id: 1.to_string(),
-                                user_id: sender_id.to_string(),
-                            },
-                        });
-
-                        if let Err(error) = sender.send(update.clone()) {
-                            error!("Failed to broadcast message: {error:?}");
-                        } else {
-                            debug!("Broadcasted message: {update:?}");
+                        if let Some(user_id) = user_id {
+                            exclude_from_all_pipelines(redis.clone(), sender, user_id).await;
                         }
 
-                        match redis.hdel("pipeline:1:participants".to_string(), sender_id.to_string()).await {
-                            Ok(()) => {
-                                debug!("Removed participant: {update:?}");
-                            }
-                            Err(error) => {
-                                error!("Failed to remove participant: {error:?}");
-                            }
-                        };
+                        break;
+                    },
+                    None => {
+                        debug!("WebSocket connection closed for sender_id: {user_id:?}");
+
+                        if let Some(user_id) = user_id {
+                            exclude_from_all_pipelines(redis.clone(), sender, user_id).await;
+                        }
 
                         break;
                     },
                 }
             },
-            res = receiver.recv() => {
-                match res {
-                    Ok(action) => {
-                        match action {
-                            WsAction::AddEditorParticipant(ref update) => {
-                                if let Some(update_sender_id) = update.sender_id {
-                                    if update_sender_id == sender_id {
-                                        continue;
-                                    }
-                                }
-
-                                if let Ok(text) = serde_json::to_string(&WsAction::AddEditorParticipant(update.clone())) {
-                                    if let Err(error) = socket.send(Message::Text(text)).await {
-                                        error!("Failed to send message to WebSocket: {error:?}");
-                                        break;
-                                    }
-
-                                    debug!("Sent message to WebSocket: {update:?}");
-                                }
+            message = receiver.recv() => {
+                match message {
+                    Ok(event) => {
+                        if let Some(user_id) = user_id {
+                            if event.sender_id == user_id {
+                                continue;
                             }
-                            WsAction::RemoveEditorParticipant(ref update) => {
-                                if let Some(update_sender_id) = update.sender_id {
-                                    if update_sender_id == sender_id {
-                                        continue;
-                                    }
+                        } else {
+                            continue;
+                        }
+
+                        match serde_json::to_string(&event.action) {
+                            Ok(text) => {
+                                if let Err(error) = socket.send(Message::Text(text)).await {
+                                    error!("Failed to send message to WebSocket: {error:?}");
+                                    break;
                                 }
 
-                                if let Ok(text) = serde_json::to_string(&WsAction::RemoveEditorParticipant(update.clone())) {
-                                    if let Err(error) = socket.send(Message::Text(text)).await {
-                                        error!("Failed to send message to WebSocket: {error:?}");
-                                        break;
-                                    }
-                                }
-
-                                debug!("Sent message to WebSocket: {update:?}");
+                                debug!("Sent message to WebSocket: {event:?}");
                             }
-                            WsAction::UpdateNode(ref update) => {
-                                if let Some(update_sender_id) = update.sender_id {
-                                    if update_sender_id == sender_id {
-                                        continue;
-                                    }
-                                }
-
-                                if let Ok(text) = serde_json::to_string(&WsAction::UpdateNode(update.clone())) {
-                                    if let Err(error) = socket.send(Message::Text(text)).await {
-                                        error!("Failed to send message to WebSocket: {error:?}");
-                                        break;
-                                    }
-                                }
-
-                                debug!("Sent message to WebSocket: {update:?}");
+                            Err(error) => {
+                                error!("Failed to serialize message: {error:?}");
                             }
                         }
                     }
@@ -198,4 +274,81 @@ async fn handle_ws_events(
             }
         }
     }
+}
+
+pub async fn exclude_from_all_pipelines(
+    mut redis: redis::aio::ConnectionManager,
+    sender: broadcast::Sender<BroadcastEvent>,
+    user_id: Uuid,
+) {
+    let pipeline_ids: Vec<String> = match redis
+        .smembers(to_participant_pipelines_redis_key(user_id))
+        .await
+    {
+        Ok(pipeline_ids) => pipeline_ids,
+        Err(error) => {
+            error!("Failed to fetch pipeline_ids: {error:?}");
+            return;
+        }
+    };
+
+    let pipeline_ids: Vec<Uuid> = pipeline_ids
+        .into_iter()
+        .filter_map(|pipeline_id_str| Uuid::parse_str(&pipeline_id_str).ok())
+        .collect();
+
+    for pipeline_id in pipeline_ids {
+        let _: () = match redis
+            .hdel(
+                to_pipeline_participant_redis_key(pipeline_id),
+                user_id.to_string(),
+            )
+            .await
+        {
+            Ok(()) => {
+                debug!("Removed participant: {pipeline_id:?}");
+            }
+            Err(error) => {
+                error!("Failed to remove participant: {error:?}");
+            }
+        };
+
+        let event = BroadcastEvent {
+            sender_id: user_id,
+            action: BroadcastEventAction::ExcludePipelineEditorParticipant(
+                BroadcastEventActionPayload {
+                    payload: ExcludePipelineEditorParticipantPayload {
+                        pipeline_id,
+                        user_id,
+                    },
+                },
+            ),
+        };
+
+        match sender.send(event.clone()) {
+            Ok(_) => {
+                debug!("Broadcasted message: {event:?}");
+            }
+            Err(error) => {
+                error!("Failed to broadcast message: {error:?}");
+            }
+        }
+    }
+
+    let _: () = match redis.del(to_participant_pipelines_redis_key(user_id)).await {
+        Ok(()) => {
+            debug!("Removed participant: {user_id:?}");
+        }
+        Err(error) => {
+            error!("Failed to remove participant: {error:?}");
+        }
+    };
+}
+
+pub fn to_pipeline_participant_redis_key(pipeline_id: Uuid) -> String {
+    format!("pipelines:{pipeline_id}:participants")
+}
+
+pub fn to_participant_pipelines_redis_key(user_id: Uuid) -> String {
+    format!("participants:{user_id}:pipelines")
 }
