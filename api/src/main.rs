@@ -50,18 +50,20 @@ struct PipelineConnection {
 
 #[derive(Debug, Serialize)]
 pub struct PipelineParticipant {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct Pipeline {
     id: Uuid,
     name: String,
     description: Option<String>,
     nodes: Vec<PipelineNode>,
     connections: Vec<PipelineConnection>,
-    participants: Vec<PipelineParticipant>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    participants: Option<Vec<PipelineParticipant>>,
 }
 
 async fn pipelines(
@@ -85,7 +87,7 @@ async fn pipelines(
                 description: row.description.clone(),
                 nodes: vec![],
                 connections: vec![],
-                participants: vec![],
+                participants: None,
             })
             .collect::<Vec<Pipeline>>()
     })

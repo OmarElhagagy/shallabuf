@@ -17,7 +17,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 
 	try {
 		const data = await fetch(
-			`http://192.168.0.2:8000/api/v0/pipelines/${params.id}`,
+			`http://192.168.0.2:8000/api/v0/pipelines/${params.id}?withParticipants=includeMyself`,
 			{
 				headers: {
 					Accept: "application/json",
@@ -26,6 +26,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 				},
 			},
 		);
+
 		pipeline = await data.json();
 	} catch (error) {
 		console.error(error);
@@ -67,7 +68,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 			<Editor
 				nodes={nodes}
 				edges={edges}
-				participants={pipeline.participants}
+				participants={pipeline.participants ?? []}
 			/>
 		</div>
 	);

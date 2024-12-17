@@ -12,6 +12,7 @@ use uuid::Uuid;
 pub struct Session {
     pub id: String,
     pub user_id: Uuid,
+    pub username: String,
     pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -35,6 +36,7 @@ pub async fn create_session(
     mut redis: redis::aio::ConnectionManager,
     token: &str,
     user_id: Uuid,
+    username: &str,
 ) -> Result<Session, StatusCode> {
     let session_id = generate_session_id(token);
 
@@ -42,6 +44,7 @@ pub async fn create_session(
     let session = Session {
         id: session_id,
         user_id,
+        username: username.to_string(),
         expires_at,
     };
 

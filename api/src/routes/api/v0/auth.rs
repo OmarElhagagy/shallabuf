@@ -30,7 +30,7 @@ pub async fn login(
     let user = sqlx::query!(
         r#"
         SELECT
-            users.id, users.password_hash
+            users.id, users.name, users.password_hash
         FROM
             users
         LEFT JOIN
@@ -62,7 +62,7 @@ pub async fn login(
         .map_err(internal_error)?;
 
     let token = generate_session_token();
-    let session = create_session(redis, &token, user.id).await?;
+    let session = create_session(redis, &token, user.id, &user.name).await?;
 
     Ok(Json(LoginResponse {
         token,

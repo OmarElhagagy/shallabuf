@@ -9,7 +9,7 @@ export interface Pipeline {
 	description?: string;
 	nodes: PipelineNode[];
 	connections: PipelineConnection[];
-	participants: PipelineParticipant[];
+	participants?: PipelineParticipant[];
 }
 
 export interface PipelineNode {

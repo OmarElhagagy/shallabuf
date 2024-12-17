@@ -4,8 +4,8 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-axum = { version = "^0.7", features = ["ws"] }
-axum-extra = { version = "^0.9", features = ["typed-header"] }
+axum = { version = "^0.7", features = ["ws", "macros"] }
+axum-extra = { version = "^0.9", features = ["typed-header", "query"] }
 tokio = { version = "^1", features = ["full"] }
 tower = "^0.5"
 hyper = { version = "^1.5", features = ["full"] }
