@@ -4,7 +4,8 @@ import { createStore } from "zustand/vanilla";
 
 export enum WsAction {
 	Authenticate = "Authenticate",
-	UpdateNode = "UpdateNode",
+	UpdateNodePosition = "UpdateNodePosition",
+	UpdateCursorPosition = "UpdateCursorPosition",
 	EnterPipelineEditor = "EnterPipelineEditor",
 	LeavePipelineEditor = "LeavePipelineEditor",
 }
@@ -13,12 +14,15 @@ export interface WsActionAuthenticatePayload {
 	token: string;
 }
 
-export interface WsActionUpdateNode {
-	node_id: string;
-	coords: {
-		x: number;
-		y: number;
-	};
+export interface WsActionUpdateNodePosition {
+	pipelineId: string;
+	nodeId: string;
+	nodePosition: Coords;
+}
+
+export interface WsActionUpdateCursorPosition {
+	pipelineId: string;
+	cursorPosition: Coords;
 }
 
 export interface WsActionEnterPipelineEditorPayload {
@@ -31,7 +35,8 @@ export interface WsActionLeavePipelineEditorPayload {
 
 export type WsActionPayload =
 	| WsActionAuthenticatePayload
-	| WsActionUpdateNode
+	| WsActionUpdateNodePosition
+	| WsActionUpdateCursorPosition
 	| WsActionEnterPipelineEditorPayload
 	| WsActionLeavePipelineEditorPayload;
 
@@ -46,6 +51,8 @@ export enum WsResAction {
 	AuthState = "AuthState",
 	IncludePipelineEditorParticipant = "IncludePipelineEditorParticipant",
 	ExcludePipelineEditorParticipant = "ExcludePipelineEditorParticipant",
+	UpdateCursorPosition = "UpdateCursorPosition",
+	UpdateNodePosition = "UpdateNodePosition",
 }
 
 export interface WsResAuthStatePayload {
@@ -63,10 +70,27 @@ export interface WsResExcludePipelineEditorParticipantPayload {
 	userId: string;
 }
 
+export interface WsResUpdateCursorPositionPayload {
+	pipelineId: string;
+	userId: string;
+	cursorPosition: {
+		x: number;
+		y: number;
+	};
+}
+
+export interface WsResUpdateNodePositionPayload {
+	pipelineId: string;
+	nodeId: string;
+	nodePosition: Coords;
+}
+
 export type WsResActionPayload =
 	| WsResAuthStatePayload
 	| WsResIncludePipelineEditorParticipantPayload
-	| WsResExcludePipelineEditorParticipantPayload;
+	| WsResExcludePipelineEditorParticipantPayload
+	| WsResUpdateCursorPositionPayload
+	| WsResUpdateNodePositionPayload;
 
 export interface WsResActionMessage<T> {
 	action: WsResAction;
@@ -78,12 +102,6 @@ export const isAuthState = (
 ): message is WsResActionMessage<WsResAuthStatePayload> => {
 	return message.action === WsResAction.AuthState;
 };
-
-// export const isNodeUpdate = (
-// 	message: WsActionMessage<WsActionPayload>,
-// ): message is WsActionMessage<WsActionUpdateNode> => {
-// 	return message.action === WsAction.UpdateNode;
-// };
 
 export const isIncludePipelineEditorParticipant = (
 	message: WsResActionMessage<WsResActionPayload>,
@@ -97,29 +115,68 @@ export const isExcludePipelineEditorParticipant = (
 	return message.action === WsResAction.ExcludePipelineEditorParticipant;
 };
 
+export const isUpdateCursorPosition = (
+	message: WsResActionMessage<WsResActionPayload>,
+): message is WsResActionMessage<WsResUpdateCursorPositionPayload> => {
+	return message.action === WsResAction.UpdateCursorPosition;
+};
+
+export const isNodePositionUpdate = (
+	message: WsResActionMessage<WsResActionPayload>,
+): message is WsResActionMessage<WsResUpdateNodePositionPayload> => {
+	return message.action === WsResAction.UpdateNodePosition;
+};
+
+export interface Coords {
+	x: number;
+	y: number;
+}
+
 export interface WsStoreState {
+	subscribers: Record<string, (payload: unknown) => void>;
 	ws: WebSocket | null;
 	delayedMessages: WsActionMessage[];
 	isAuthenticated: boolean;
-	pipelinesParticipants: Record<string, Record<string, string>>; // { pipelineId -> { userId -> username } }
+	pipelinesParticipants: Record<
+		string,
+		Record<
+			string,
+			{
+				username: string;
+				cursorPosition?: Coords;
+			}
+		>
+	>; // { pipelineId -> { userId -> {username, cursorPosition} } }
 }
 
 export interface WsStoreActions {
+	subscribeForNodeUpdates: (
+		pipelineId: string,
+		cb: (update: WsResUpdateNodePositionPayload) => void,
+	) => () => void;
+	unsubscribeForNodeUpdates: (pipelineId: string) => void;
 	sendMessage: (message: WsActionMessage) => void;
-	connect: (uri: string, session_token: string) => () => void;
+	connect: (uri: string, sessionToken: string) => () => void;
 	disconnect: () => void;
 	authenticate: (token: string) => void;
-	enterPipelineEditor: (pipeline_id: string) => void;
-	leavePipelineEditor: (pipeline_id: string) => void;
+	enterPipelineEditor: (pipelineId: string) => void;
+	leavePipelineEditor: (pipelineId: string) => void;
+	updateCursorPosition: (pipelineId: string, cursorPosition: Coords) => void;
+	updateNodePosition: (
+		pipelineId: string,
+		nodeId: string,
+		nodePosition: Coords,
+	) => void;
 	initPipelineParticipants: (
 		pipelineId: string,
-		participants: Record<string, string>,
+		participants: WsStoreState["pipelinesParticipants"][string],
 	) => void;
 }
 
 export type WsStore = WsStoreState & WsStoreActions;
 
 export const defaultInitState: WsStoreState = {
+	subscribers: {},
 	ws: null,
 	delayedMessages: [],
 	isAuthenticated: false,
@@ -129,6 +186,27 @@ export const defaultInitState: WsStoreState = {
 export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 	createStore<WsStore>()((set, get) => ({
 		...initState,
+		subscribeForNodeUpdates: (pipelineId, cb) => {
+			set((state) => ({
+				subscribers: {
+					...state.subscribers,
+					[pipelineId]: cb as (payload: unknown) => void,
+				},
+			}));
+
+			return () => {
+				get().unsubscribeForNodeUpdates(pipelineId);
+			};
+		},
+		unsubscribeForNodeUpdates: (pipelineId) => {
+			set((state) => ({
+				subscribers: Object.fromEntries(
+					Object.entries(state.subscribers).filter(
+						([key]) => key !== pipelineId,
+					),
+				),
+			}));
+		},
 		sendMessage: (message) => {
 			if (get().ws === null || get().ws?.readyState !== get().ws?.OPEN) {
 				set({ delayedMessages: [...get().delayedMessages, message] });
@@ -185,7 +263,10 @@ export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 									...state.pipelinesParticipants,
 									[pipelineId]: {
 										...participants,
-										[userId]: username,
+										[userId]: {
+											username,
+											cursorPosition: undefined,
+										},
 									},
 								},
 							};
@@ -210,6 +291,38 @@ export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 								},
 							};
 						});
+					}
+
+					if (isUpdateCursorPosition(message)) {
+						const { pipelineId, userId, cursorPosition } = message.payload;
+
+						set((state) => {
+							const participants =
+								state.pipelinesParticipants[pipelineId] ?? {};
+
+							return {
+								pipelinesParticipants: {
+									...state.pipelinesParticipants,
+									[pipelineId]: {
+										...participants,
+										[userId]: {
+											...(participants[userId] ?? {}),
+											cursorPosition,
+										},
+									},
+								},
+							};
+						});
+					}
+
+					if (isNodePositionUpdate(message)) {
+						const { pipelineId } = message.payload;
+
+						const subscriber = get().subscribers[pipelineId];
+
+						if (subscriber) {
+							subscriber(message.payload);
+						}
 					}
 				};
 			}
@@ -242,6 +355,29 @@ export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 				payload: {
 					pipelineId,
 				} as WsActionLeavePipelineEditorPayload,
+			};
+
+			get().sendMessage(data);
+		},
+		updateCursorPosition: (pipelineId, cursorPosition) => {
+			const data: WsActionMessage = {
+				action: WsAction.UpdateCursorPosition,
+				payload: {
+					pipelineId,
+					cursorPosition,
+				} as WsActionUpdateCursorPosition,
+			};
+
+			get().sendMessage(data);
+		},
+		updateNodePosition: (pipelineId, nodeId, nodePosition) => {
+			const data: WsActionMessage = {
+				action: WsAction.UpdateNodePosition,
+				payload: {
+					pipelineId,
+					nodeId,
+					nodePosition,
+				} as WsActionUpdateNodePosition,
 			};
 
 			get().sendMessage(data);

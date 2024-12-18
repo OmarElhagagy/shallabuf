@@ -73,6 +73,23 @@ pub struct ExcludePipelineEditorParticipantPayload {
 }
 
 #[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePipelineEditorParticipantCursorPositionPayload {
+    pub pipeline_id: Uuid,
+    pub user_id: Uuid,
+    pub cursor_position: Coords,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdatePipelineEditorParticipantNodePositionPayload {
+    pub pipeline_id: Uuid,
+    pub user_id: Uuid,
+    pub node_id: Uuid,
+    pub node_position: Coords,
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct BroadcastEventActionPayload<T> {
     pub payload: T,
 }
@@ -86,6 +103,12 @@ pub enum BroadcastEventAction {
     ),
     ExcludePipelineEditorParticipant(
         BroadcastEventActionPayload<ExcludePipelineEditorParticipantPayload>,
+    ),
+    UpdateCursorPosition(
+        BroadcastEventActionPayload<UpdatePipelineEditorParticipantCursorPositionPayload>,
+    ),
+    UpdateNodePosition(
+        BroadcastEventActionPayload<UpdatePipelineEditorParticipantNodePositionPayload>,
     ),
 }
 
@@ -101,12 +124,6 @@ pub struct AuthenticatePayload {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct UpdateNodePayload {
-    pub node_id: Uuid,
-    pub coords: Option<Value>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct EnterPipelineEditorPayload {
     pub pipeline_id: Uuid,
@@ -116,6 +133,27 @@ pub struct EnterPipelineEditorPayload {
 #[serde(rename_all = "camelCase")]
 pub struct LeavePipelineEditorPayload {
     pub pipeline_id: Uuid,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Coords {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateNodePositionPayload {
+    pub pipeline_id: Uuid,
+    pub node_id: Uuid,
+    pub node_position: Coords,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCursorPositionPayload {
+    pub pipeline_id: Uuid,
+    pub cursor_position: Coords,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -129,7 +167,8 @@ pub enum WsClientAction {
     Authenticate(WsClientActionPayload<AuthenticatePayload>),
     EnterPipelineEditor(WsClientActionPayload<EnterPipelineEditorPayload>),
     LeavePipelineEditor(WsClientActionPayload<LeavePipelineEditorPayload>),
-    UpdateNode(WsClientActionPayload<UpdateNodePayload>),
+    UpdateNodePosition(WsClientActionPayload<UpdateNodePositionPayload>),
+    UpdateCursorPosition(WsClientActionPayload<UpdateCursorPositionPayload>),
 }
 
 #[derive(Clone)]

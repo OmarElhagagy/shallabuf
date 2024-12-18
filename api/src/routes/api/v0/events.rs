@@ -15,7 +15,9 @@ use crate::{
     app_state::{
         AuthStatePayload, Broadcast, BroadcastEvent, BroadcastEventAction,
         BroadcastEventActionPayload, DatabaseConnection, ExcludePipelineEditorParticipantPayload,
-        IncludePipelineEditorParticipantPayload, RedisConnection, WsClientAction,
+        IncludePipelineEditorParticipantPayload, RedisConnection,
+        UpdatePipelineEditorParticipantCursorPositionPayload,
+        UpdatePipelineEditorParticipantNodePositionPayload, WsClientAction,
     },
     lib::session::validate_session_token,
 };
@@ -88,14 +90,32 @@ async fn handle_ws_events(
                                         }
                                     }
                                 }
-                                WsClientAction::UpdateNode(ref mut update) => {
-                                    // update.sender_id = user_id;
+                                WsClientAction::UpdateNodePosition(action) => {
+                                    if let Some(user_id) = user_id {
+                                        let event = BroadcastEvent {
+                                            sender_id: user_id,
+                                            action: BroadcastEventAction::UpdateNodePosition(BroadcastEventActionPayload {
+                                                payload: UpdatePipelineEditorParticipantNodePositionPayload {
+                                                    pipeline_id: action.payload.pipeline_id,
+                                                    user_id,
+                                                    node_id: action.payload.node_id,
+                                                    node_position: action.payload.node_position,
+                                                },
+                                            }),
+                                        };
 
-                                    // if let Err(error) = sender.send(WsAction::UpdateNode(update.clone())) {
-                                    //     error!("Failed to broadcast message: {error:?}");
-                                    // } else {
-                                    //     debug!("Broadcasted message: {update:?}");
-                                    // }
+                                        match sender.send(event.clone()) {
+                                            Ok(_) => {
+                                                debug!("Broadcasted message: {event:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to broadcast message: {error:?}");
+                                            }
+                                        }
+                                    } else {
+                                        warn!("WsAction::UpdateNodePosition: User isn't authenticated");
+                                    }
+
                                 }
                                 WsClientAction::EnterPipelineEditor(action) => {
                                     if let Some(user_id) = user_id {
@@ -164,7 +184,7 @@ async fn handle_ws_events(
                                             }
                                         }
                                     } else {
-                                        warn!("WsAction::AddEditorParticipant: User isn't authenticated");
+                                        warn!("WsAction::EnterPipelineEditor: User isn't authenticated");
                                     }
                                 }
                                 WsClientAction::LeavePipelineEditor(action) => {
@@ -193,6 +213,15 @@ async fn handle_ws_events(
                                             }
                                         };
 
+                                        match redis.del(to_cursors_redis_key(action.payload.pipeline_id, user_id)).await {
+                                            Ok(()) => {
+                                                debug!("Removed cursor: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to remove cursor: {error:?}");
+                                            }
+                                        };
+
                                         let event = BroadcastEvent {
                                             sender_id: user_id,
                                             action: BroadcastEventAction::ExcludePipelineEditorParticipant(BroadcastEventActionPayload {
@@ -212,7 +241,52 @@ async fn handle_ws_events(
                                             }
                                         }
                                     } else {
-                                        warn!("WsAction::RemoveEditorParticipant: User isn't authenticated");
+                                        warn!("WsAction::LeavePipelineEditor: User isn't authenticated");
+                                    }
+                                }
+                                WsClientAction::UpdateCursorPosition(action) => {
+                                    if let Some(user_id) = user_id {
+                                        let cursor_position = match serde_json::to_string(&action.payload.cursor_position) {
+                                            Ok(cursor_position_value) => cursor_position_value,
+                                            Err(error) => {
+                                                error!("Failed to serialize cursor_position: {error:?}");
+                                                continue;
+                                            }
+                                        };
+
+                                        match redis.set(
+                                            to_cursors_redis_key(action.payload.pipeline_id, user_id),
+                                            cursor_position
+                                        ).await {
+                                            Ok(()) => {
+                                                debug!("Updated cursor: {action:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to update cursor: {error:?}");
+                                            }
+                                        };
+
+                                        let event = BroadcastEvent {
+                                            sender_id: user_id,
+                                            action: BroadcastEventAction::UpdateCursorPosition(BroadcastEventActionPayload {
+                                                payload: UpdatePipelineEditorParticipantCursorPositionPayload {
+                                                    pipeline_id: action.payload.pipeline_id,
+                                                    user_id,
+                                                    cursor_position: action.payload.cursor_position,
+                                                },
+                                            }),
+                                        };
+
+                                        match sender.send(event.clone()) {
+                                            Ok(_) => {
+                                                debug!("Broadcasted message: {event:?}");
+                                            }
+                                            Err(error) => {
+                                                error!("Failed to broadcast message: {error:?}");
+                                            }
+                                        }
+                                    } else {
+                                        warn!("WsAction::UpdateCursorPosition: User isn't authenticated");
                                     }
                                 }
                             }
@@ -313,6 +387,15 @@ pub async fn exclude_from_all_pipelines(
             }
         };
 
+        let _: () = match redis.del(to_cursors_redis_key(pipeline_id, user_id)).await {
+            Ok(()) => {
+                debug!("Removed cursor: {pipeline_id:?}");
+            }
+            Err(error) => {
+                error!("Failed to remove cursor: {error:?}");
+            }
+        };
+
         let event = BroadcastEvent {
             sender_id: user_id,
             action: BroadcastEventAction::ExcludePipelineEditorParticipant(
@@ -351,4 +434,8 @@ pub fn to_pipeline_participant_redis_key(pipeline_id: Uuid) -> String {
 
 pub fn to_participant_pipelines_redis_key(user_id: Uuid) -> String {
     format!("participants:{user_id}:pipelines")
+}
+
+pub fn to_cursors_redis_key(pipeline_id: Uuid, user_id: Uuid) -> String {
+    format!("cursors:{pipeline_id}:{user_id}")
 }

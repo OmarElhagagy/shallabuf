@@ -5,13 +5,16 @@ import {
 	addEdge,
 	useEdgesState,
 	useNodesState,
+	useReactFlow,
 } from "@xyflow/react";
+import { MousePointer2 } from "lucide-react";
 import { useParams } from "next/navigation";
-import React, { useCallback, useEffect } from "react";
+import React, { type MouseEvent, useCallback, useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
 import { useWsStore } from "~/contexts/ws-store-context";
 import type { PipelineParticipant } from "~/lib/dtos";
+import type { WsStoreState } from "~/stores/ws-store";
 
 export interface EditorProps {
 	nodes: Parameters<typeof useNodesState>[0];
@@ -20,24 +23,50 @@ export interface EditorProps {
 }
 
 export const Editor = (props: EditorProps) => {
-	const [nodes, , onNodesChange] = useNodesState(props.nodes);
+	const [nodes, setNodes, onNodesChange] = useNodesState(props.nodes);
 	const [edges, setEdges, onEdgesChange] = useEdgesState(props.edges);
 	const params = useParams();
 	const pipelineId = params.id as string;
 
 	const [
 		participants,
+		subscribeForNodeUpdates,
 		initPipelineParticipants,
 		enterPipelineEditor,
 		leavePipelineEditor,
+		updateCursorPosition,
+		updateNodePosition,
 	] = useWsStore(
 		useShallow((state) => [
 			state.pipelinesParticipants[pipelineId] ?? {},
+			state.subscribeForNodeUpdates,
 			state.initPipelineParticipants,
 			state.enterPipelineEditor,
 			state.leavePipelineEditor,
+			state.updateCursorPosition,
+			state.updateNodePosition,
 		]),
 	);
+
+	useEffect(() => {
+		return subscribeForNodeUpdates(pipelineId, (update) => {
+			setNodes((nodes) => {
+				const node = nodes.find((node) => node.id === update.nodeId);
+
+				if (!node) {
+					return nodes;
+				}
+
+				return [
+					...nodes.filter((node) => node.id !== update.nodeId),
+					{
+						...node,
+						position: update.nodePosition,
+					},
+				];
+			});
+		});
+	}, [pipelineId, setNodes, subscribeForNodeUpdates]);
 
 	const onConnect: OnConnect = useCallback(
 		(params) => setEdges((eds) => addEdge(params, eds)),
@@ -49,10 +78,12 @@ export const Editor = (props: EditorProps) => {
 			pipelineId,
 			props.participants.reduce(
 				(acc, participant) => {
-					acc[participant.id] = participant.name;
+					acc[participant.id] = {
+						username: participant.name,
+					};
 					return acc;
 				},
-				{} as Record<string, string>,
+				{} as WsStoreState["pipelinesParticipants"][string],
 			),
 		);
 	}, [initPipelineParticipants, props.participants, pipelineId]);
@@ -65,110 +96,16 @@ export const Editor = (props: EditorProps) => {
 		};
 	}, [enterPipelineEditor, leavePipelineEditor, pipelineId]);
 
-	// const onWsMessage = useCallback(
-	// 	(event: MessageEvent) => {
-	// 		const message: WsActionMessage<WsActionPayload> = JSON.parse(event.data);
+	const broadcastNodePosition: NonNullable<
+		Parameters<typeof ReactFlow>[0]["onNodeDrag"]
+	> = useCallback(
+		(_event, node) => {
+			updateNodePosition(pipelineId, node.id, node.position);
+		},
+		[pipelineId, updateNodePosition],
+	);
 
-	// 		console.log("Received message", message);
-
-	// 		if (isNodeUpdate(message)) {
-	// 			console.log(
-	// 				"Node update",
-	// 				message.payload.node_id,
-	// 				message.payload.coords,
-	// 			);
-
-	// 			setNodes((nodes) =>
-	// 				nodes.map((node) => {
-	// 					if (node.id === message.payload.node_id) {
-	// 						return {
-	// 							...node,
-	// 							position: message.payload.coords,
-	// 						};
-	// 					}
-
-	// 					return node;
-	// 				}),
-	// 			);
-	// 		} else if (isAddEditorParticipant(message)) {
-	// 			setParticipants((participants) => [
-	// 				...participants,
-	// 				{
-	// 					id: message.sender_id ?? message.payload.user_id,
-	// 					name: message.payload.username,
-	// 				},
-	// 			]);
-	// 		} else if (isRemoveEditorParticipant(message)) {
-	// 			setParticipants((participants) =>
-	// 				participants.filter(
-	// 					(participant) => participant.id !== message.payload.user_id,
-	// 				),
-	// 			);
-	// 		}
-	// 	},
-	// 	[setNodes],
-	// );
-
-	// useEffect(() => {
-	// 	if (!ws || ws.readyState !== ws.OPEN) {
-	// 		return;
-	// 	}
-
-	// 	const user_id = Math.random().toString(36).substring(2, 10);
-
-	// 	const data: WsActionMessage<WsActionAddEditorParticipant> = {
-	// 		action: WsAction.AddEditorParticipant,
-	// 		sender_id: null,
-	// 		payload: {
-	// 			pipeline_id: "1",
-	// 			user_id,
-	// 			username: `user_${Math.random().toString(36).substring(2, 5)}`,
-	// 		},
-	// 	};
-
-	// 	ws.send(JSON.stringify(data));
-
-	// 	return () => {
-	// 		const data: WsActionMessage<WsActionRemoveEditorParticipant> = {
-	// 			action: WsAction.RemoveEditorParticipant,
-	// 			sender_id: null,
-	// 			payload: {
-	// 				pipeline_id: "1",
-	// 				user_id,
-	// 			},
-	// 		};
-
-	// 		ws.send(JSON.stringify(data));
-	// 	};
-	// }, [ws, ws?.readyState]);
-
-	// useEffect(() => {
-	// 	ws?.addEventListener("message", onWsMessage);
-	// 	return () => ws?.removeEventListener("message", onWsMessage);
-	// }, [ws, onWsMessage]);
-
-	// const broadcastNodePosition: NonNullable<
-	// 	Parameters<typeof ReactFlow>[0]["onNodeDrag"]
-	// > = useCallback(
-	// 	(_event, node) => {
-	// 		ws?.send(
-	// 			JSON.stringify({
-	// 				action: WsAction.UpdateNode,
-	// 				sender_id: null,
-	// 				payload: {
-	// 					node_id: node.id,
-	// 					coords: {
-	// 						x: node.position.x,
-	// 						y: node.position.y,
-	// 					},
-	// 				},
-	// 			}),
-	// 		);
-	// 	},
-	// 	[ws],
-	// );
-
-	const updateNodePosition: NonNullable<
+	const saveNodePosition: NonNullable<
 		Parameters<typeof ReactFlow>[0]["onNodeDragStop"]
 	> = useCallback(async (_event, node) => {
 		await updatePipelineNodeAction({
@@ -180,33 +117,96 @@ export const Editor = (props: EditorProps) => {
 		});
 	}, []);
 
+	const { getViewport } = useReactFlow();
+	const viewportContainer = useRef<HTMLDivElement>(null);
+
+	const broadcastCursorPosition = useCallback(
+		(event: MouseEvent<HTMLDivElement>) => {
+			const rect = viewportContainer.current?.getBoundingClientRect();
+
+			if (!rect) {
+				return;
+			}
+
+			const viewport = getViewport();
+
+			const adjustedX =
+				(event.clientX - rect.left - viewport.x) / viewport.zoom;
+			const adjustedY = (event.clientY - rect.top - viewport.y) / viewport.zoom;
+
+			updateCursorPosition(pipelineId, {
+				x: adjustedX,
+				y: adjustedY,
+			});
+		},
+		[getViewport, updateCursorPosition, pipelineId],
+	);
+
 	return (
-		<div className="w-full h-full">
+		<div className="w-full h-full relative">
 			<div className="p-4 bg-white shadow rounded">
 				<h2 className="text-xl font-bold mb-2">Participants</h2>
 
 				<ul className="list-disc pl-5">
-					{Object.entries(participants).map(([id, name]) => (
-						<li key={id} className="py-1">
-							{name}
-						</li>
-					))}
+					{Object.entries(participants).map(
+						([id, { username, cursorPosition }]) => (
+							<li key={id} className="py-1">
+								{username}
+
+								{cursorPosition && (
+									<span className="text-xs text-gray-500 ml-2">
+										({cursorPosition.x}, {cursorPosition.y})
+									</span>
+								)}
+							</li>
+						),
+					)}
 				</ul>
 			</div>
 
-			<ReactFlow
-				nodes={nodes}
-				edges={edges}
-				onNodesChange={onNodesChange}
-				onEdgesChange={onEdgesChange}
-				onConnect={onConnect}
-				onNodeDragStop={updateNodePosition}
-				// onNodeDrag={broadcastNodePosition}
-				fitView
-				proOptions={{
-					hideAttribution: true,
-				}}
-			/>
+			<div
+				ref={viewportContainer}
+				className="relative h-full w-full border border-gray-200 mt-4"
+			>
+				<ReactFlow
+					onMouseMove={broadcastCursorPosition}
+					nodes={nodes}
+					edges={edges}
+					onNodesChange={onNodesChange}
+					onEdgesChange={onEdgesChange}
+					onConnect={onConnect}
+					onNodeDragStop={saveNodePosition}
+					onNodeDrag={broadcastNodePosition}
+					fitView
+					proOptions={{
+						hideAttribution: true,
+					}}
+				/>
+
+				{Object.entries(participants).map(
+					([id, { username, cursorPosition }]) => {
+						if (!cursorPosition) {
+							return null;
+						}
+
+						const viewport = getViewport();
+
+						return (
+							<div
+								key={id}
+								className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2"
+								style={{
+									left: cursorPosition.x * viewport.zoom + viewport.x,
+									top: cursorPosition.y * viewport.zoom + viewport.y,
+								}}
+							>
+								<MousePointer2 />
+								<span className="username">{username}</span>
+							</div>
+						);
+					},
+				)}
+			</div>
 		</div>
 	);
 };

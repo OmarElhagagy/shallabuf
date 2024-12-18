@@ -1,5 +1,9 @@
 import "@xyflow/react/dist/style.css";
-import type { useEdgesState, useNodesState } from "@xyflow/react";
+import {
+	ReactFlowProvider,
+	type useEdgesState,
+	type useNodesState,
+} from "@xyflow/react";
 import { Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
@@ -62,14 +66,16 @@ export default async function PipelineDetails(props: { params: Params }) {
 						</div>
 					</Link>
 				</Button>
-				Pipeline {pipeline.name}
+				{pipeline.name}
 			</h1>
 
-			<Editor
-				nodes={nodes}
-				edges={edges}
-				participants={pipeline.participants ?? []}
-			/>
+			<ReactFlowProvider>
+				<Editor
+					nodes={nodes}
+					edges={edges}
+					participants={pipeline.participants ?? []}
+				/>
+			</ReactFlowProvider>
 		</div>
 	);
 }
