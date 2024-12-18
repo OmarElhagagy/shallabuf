@@ -116,3 +116,44 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_nodes_connections_to_node_id
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_nodes_pipeline_id
     ON pipeline_nodes(pipeline_id);
+
+-- Create triggers
+CREATE TRIGGER set_updated_at_templates
+BEFORE UPDATE ON templates
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipelines
+BEFORE UPDATE ON pipelines
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipeline_triggers
+BEFORE UPDATE ON pipeline_triggers
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_nodes
+BEFORE UPDATE ON nodes
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipeline_exec
+BEFORE UPDATE ON pipeline_exec
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipeline_nodes
+BEFORE UPDATE ON pipeline_nodes
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipeline_nodes_exec
+BEFORE UPDATE ON pipeline_nodes_exec
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER set_updated_at_pipeline_nodes_connections
+BEFORE UPDATE ON pipeline_nodes_connections
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at_column();

@@ -1,12 +1,18 @@
-interface Pipeline {
+export interface PipelineParticipant {
+	id: string;
+	name: string;
+}
+
+export interface Pipeline {
 	id: string;
 	name: string;
 	description?: string;
 	nodes: PipelineNode[];
 	connections: PipelineConnection[];
+	participants?: PipelineParticipant[];
 }
 
-interface PipelineNode {
+export interface PipelineNode {
 	id: string;
 	node_id: string;
 	node_version: string;
@@ -17,7 +23,7 @@ interface PipelineNode {
 	};
 }
 
-interface PipelineConnection {
+export interface PipelineConnection {
 	id: string;
 	from_node_id: string;
 	to_node_id: string;

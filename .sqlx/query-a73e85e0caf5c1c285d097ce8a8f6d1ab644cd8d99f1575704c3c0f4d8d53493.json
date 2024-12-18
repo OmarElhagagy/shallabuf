@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO pipelines (name, description, team_id)\n        VALUES ($1, $2, $3)\n        RETURNING id\n        ",
+  "query": "\n        INSERT INTO teams (id, name, organization_id)\n        VALUES ($1, $2, $3)\n        RETURNING id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,7 +11,7 @@
     ],
     "parameters": {
       "Left": [
-        "Varchar",
+        "Uuid",
         "Varchar",
         "Uuid"
       ]
@@ -20,5 +20,5 @@
       false
     ]
   },
-  "hash": "a4f5e847839ab3b5e76c8f6fa88e0f9d14d4255fdf73665442d20f5cf6e18e14"
+  "hash": "a73e85e0caf5c1c285d097ce8a8f6d1ab644cd8d99f1575704c3c0f4d8d53493"
 }

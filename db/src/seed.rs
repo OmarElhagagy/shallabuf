@@ -1,8 +1,13 @@
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
 use std::collections::HashMap;
+use uuid::Uuid; // Added import for argon2
 
 use crate::dtos::{
-    NodeConfig, NodeConfigV0, NodeContainerType, NodeInput, NodeInputType, NodeOutputType,
-    PipelineTriggerConfig, PipelineTriggerConfigV0, SelectInput,
+    KeyProviderType, NodeConfig, NodeConfigV0, NodeContainerType, NodeInput, NodeInputType,
+    NodeOutputType, PipelineTriggerConfig, PipelineTriggerConfigV0, SelectInput,
 };
 use sqlx::PgPool;
 
@@ -13,15 +18,23 @@ use sqlx::PgPool;
 /// This function panics if the database connection fails
 /// or if a json config serialization fails.
 #[allow(clippy::too_many_lines)]
-pub async fn seed_database(db: &PgPool) -> Result<(), sqlx::Error> {
-    // Insert into organizations
+pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
+    // Define predetermined UUIDs
+    let organization_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
+    let team_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap();
+    let pipeline_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174002").unwrap();
+    let alex_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174003").unwrap();
+    let bob_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174004").unwrap();
+
+    // Insert into organizations with fixed UUID and fancy name
     let organization = sqlx::query!(
         r#"
-        INSERT INTO organizations (name)
-        VALUES ($1)
+        INSERT INTO organizations (id, name)
+        VALUES ($1, $2)
         RETURNING id
         "#,
-        "Organization 1"
+        organization_id,
+        "Aurora Innovations"
     )
     .fetch_one(db)
     .await?;
@@ -29,25 +42,120 @@ pub async fn seed_database(db: &PgPool) -> Result<(), sqlx::Error> {
     // Insert into teams
     let team = sqlx::query!(
         r#"
-        INSERT INTO teams (name, organization_id)
-        VALUES ($1, $2)
+        INSERT INTO teams (id, name, organization_id)
+        VALUES ($1, $2, $3)
         RETURNING id
         "#,
-        "Team 1",
+        team_id,
+        "Stellar Team",
         organization.id
     )
     .fetch_one(db)
     .await?;
 
-    // Insert into pipelines
-    let pipeline = sqlx::query!(
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+
+    let hashed_password = argon2
+        .hash_password(b"alexpass", &salt)
+        .map_err(|error| anyhow::anyhow!(error))?
+        .to_string();
+
+    let user_alex = sqlx::query!(
         r#"
-        INSERT INTO pipelines (name, description, team_id)
+        INSERT INTO users (id, name, email, password_hash, email_verified, organization_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        "#,
+        alex_id,
+        "Alex",
+        "alex@mail.com",
+        hashed_password, // Replaced bcrypt hash with argon2 hash
+        true,
+        organization_id
+    )
+    .fetch_one(db)
+    .await?;
+
+    let _user_alex_key = sqlx::query!(
+        r#"
+        INSERT INTO keys (user_id, provider, provider_key)
         VALUES ($1, $2, $3)
         RETURNING id
         "#,
-        "Pipeline 1",
-        Some("Description 1".to_string()),
+        user_alex.id,
+        KeyProviderType::Password as KeyProviderType,
+        "alex@mail.com"
+    )
+    .fetch_one(db)
+    .await?;
+
+    let hashed_password = argon2
+        .hash_password(b"bobpass", &salt)
+        .map_err(|error| anyhow::anyhow!(error))?
+        .to_string();
+
+    let user_bob = sqlx::query!(
+        r#"
+        INSERT INTO users (id, name, email, password_hash, email_verified, organization_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id
+        "#,
+        bob_id,
+        "Bob",
+        "bob@mail.com",
+        hashed_password,
+        true,
+        organization_id
+    )
+    .fetch_one(db)
+    .await?;
+
+    let _user_bob_key = sqlx::query!(
+        r#"
+        INSERT INTO keys (user_id, provider, provider_key)
+        VALUES ($1, $2, $3)
+        RETURNING id
+        "#,
+        user_bob.id,
+        KeyProviderType::Password as KeyProviderType,
+        "bob@mail.com"
+    )
+    .fetch_one(db)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO user_teams (user_id, team_id)
+        VALUES ($1, $2)
+        "#,
+        user_alex.id,
+        team_id
+    )
+    .execute(db)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO user_teams (user_id, team_id)
+        VALUES ($1, $2)
+        "#,
+        user_bob.id,
+        team_id
+    )
+    .execute(db)
+    .await?;
+
+    // Insert into pipelines
+    let pipeline = sqlx::query!(
+        r#"
+        INSERT INTO pipelines (id, name, description, team_id)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id
+        "#,
+        pipeline_id,
+        "Quantum Pipeline",
+        Some("A cutting-edge pipeline for quantum data.".to_string()),
         team.id
     )
     .fetch_one(db)
