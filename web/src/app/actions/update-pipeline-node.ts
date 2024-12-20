@@ -20,9 +20,9 @@ export async function updatePipelineNodeAction({
 		},
 	);
 
-	console.log(response);
-
 	if (!response.ok) {
-		throw new Error("Failed to update node");
+		throw new Error(
+			`Failed to update node: ${response.status} - ${await response.text()}`,
+		);
 	}
 }
