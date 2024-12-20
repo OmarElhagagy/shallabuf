@@ -263,6 +263,10 @@ async fn main() -> io::Result<()> {
             "/api/v0/pipeline_nodes/:id",
             post(routes::api::v0::pipeline_nodes::update),
         )
+        .route(
+            "/api/v0/pipeline_nodes_connections",
+            post(routes::api::v0::pipeline_nodes_connections::create),
+        )
         .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
         .with_state(app_state)
         .layer(CorsLayer::permissive());

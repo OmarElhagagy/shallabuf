@@ -27,6 +27,7 @@ import React, {
 } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
+import { createPipelineNodeConnectionAction } from "~/app/actions/create-pipeline-node-connection";
 import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
 import { useWsStore } from "~/contexts/ws-store-context";
 import type { Node, PipelineNode, PipelineParticipant } from "~/lib/dtos";
@@ -88,7 +89,23 @@ export const Editor = (props: EditorProps) => {
 	}, [pipelineId, setNodes, subscribeForNodeUpdates]);
 
 	const onConnect: OnConnect = useCallback(
-		(params) => setEdges((eds) => addEdge(params, eds)),
+		async (params) => {
+			const connection = await createPipelineNodeConnectionAction({
+				fromNodeId: params.source,
+				toNodeId: params.target,
+			});
+
+			setEdges((eds) => {
+				return addEdge(
+					{
+						...params,
+						source: connection.fromNodeId,
+						target: connection.toNodeId,
+					},
+					eds,
+				);
+			});
+		},
 		[setEdges],
 	);
 
