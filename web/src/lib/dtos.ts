@@ -1,3 +1,9 @@
+export interface Node {
+	id: string;
+	name: string;
+	description?: string;
+}
+
 export interface PipelineParticipant {
 	id: string;
 	name: string;

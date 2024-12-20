@@ -1,6 +1,15 @@
 "use client";
 import {
+	DndContext,
+	DragOverlay,
+	type DragStartEvent,
+	type UniqueIdentifier,
+} from "@dnd-kit/core";
+import {
+	Background,
+	BackgroundVariant,
 	type OnConnect,
+	Panel,
 	ReactFlow,
 	addEdge,
 	useEdgesState,
@@ -9,17 +18,27 @@ import {
 } from "@xyflow/react";
 import { MousePointer2 } from "lucide-react";
 import { useParams } from "next/navigation";
-import React, { type MouseEvent, useCallback, useEffect, useRef } from "react";
+import React, {
+	type MouseEvent,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
+import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
 import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
 import { useWsStore } from "~/contexts/ws-store-context";
-import type { PipelineParticipant } from "~/lib/dtos";
+import type { Node, PipelineNode, PipelineParticipant } from "~/lib/dtos";
 import type { WsStoreState } from "~/stores/ws-store";
+import { Dropzone } from "./dropzone";
+import { NodeItem } from "./node-item";
 
 export interface EditorProps {
 	nodes: Parameters<typeof useNodesState>[0];
 	edges: Parameters<typeof useEdgesState>[0];
 	participants: PipelineParticipant[];
+	availableNodes: Node[];
 }
 
 export const Editor = (props: EditorProps) => {
@@ -142,6 +161,41 @@ export const Editor = (props: EditorProps) => {
 		[getViewport, updateCursorPosition, pipelineId],
 	);
 
+	const [draggableNodeItem, setDraggableNodeItem] =
+		useState<UniqueIdentifier>("");
+
+	const onDragStart = useCallback((event: DragStartEvent) => {
+		setDraggableNodeItem(event.active.id);
+	}, []);
+
+	const onDragEnd = useCallback(async () => {
+		const pipelineNode: PipelineNode = await createPipelineNodeAction({
+			pipelineId,
+			nodeId: draggableNodeItem.toString(),
+			nodeVersion: "latest",
+			// FIXME: This should be the actual cursor position
+			coords: {
+				x: 250,
+				y: 25,
+			},
+		});
+
+		setDraggableNodeItem("");
+
+		setNodes((nodes) => {
+			return [
+				...nodes,
+				{
+					id: pipelineNode.id,
+					position: pipelineNode.coords,
+					data: {
+						label: pipelineNode.id,
+					},
+				},
+			];
+		});
+	}, [draggableNodeItem, pipelineId, setNodes]);
+
 	return (
 		<div className="w-full h-full relative">
 			<div className="p-4 bg-white shadow rounded">
@@ -164,49 +218,78 @@ export const Editor = (props: EditorProps) => {
 				</ul>
 			</div>
 
-			<div
-				ref={viewportContainer}
-				className="relative h-full w-full border border-gray-200 mt-4"
-			>
-				<ReactFlow
-					onMouseMove={broadcastCursorPosition}
-					nodes={nodes}
-					edges={edges}
-					onNodesChange={onNodesChange}
-					onEdgesChange={onEdgesChange}
-					onConnect={onConnect}
-					onNodeDragStop={saveNodePosition}
-					onNodeDrag={broadcastNodePosition}
-					fitView
-					proOptions={{
-						hideAttribution: true,
-					}}
-				/>
-
-				{Object.entries(participants).map(
-					([id, { username, cursorPosition }]) => {
-						if (!cursorPosition) {
-							return null;
-						}
-
-						const viewport = getViewport();
-
-						return (
-							<div
-								key={id}
-								className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2"
-								style={{
-									left: cursorPosition.x * viewport.zoom + viewport.x,
-									top: cursorPosition.y * viewport.zoom + viewport.y,
-								}}
+			<DndContext onDragStart={onDragStart} onDragEnd={onDragEnd}>
+				<Dropzone className="h-full">
+					<div
+						ref={viewportContainer}
+						className="relative h-full w-full border border-gray-200 mt-4"
+					>
+						<ReactFlow
+							onMouseMove={broadcastCursorPosition}
+							nodes={nodes}
+							edges={edges}
+							onNodesChange={onNodesChange}
+							onEdgesChange={onEdgesChange}
+							onConnect={onConnect}
+							onNodeDragStop={saveNodePosition}
+							onNodeDrag={broadcastNodePosition}
+							fitView
+							proOptions={{
+								hideAttribution: true,
+							}}
+						>
+							<Panel
+								className="p-3 border rounded-md top-1 right-1 bottom-1 bg-slate-100"
+								position="top-right"
 							>
-								<MousePointer2 />
-								<span className="username">{username}</span>
-							</div>
-						);
-					},
-				)}
-			</div>
+								<ul className="pl-5">
+									{props.availableNodes.map((node) => (
+										<li key={node.id} className="mb-2">
+											<NodeItem id={node.id}>{node.name}</NodeItem>
+										</li>
+									))}
+								</ul>
+							</Panel>
+
+							<Background color="#ccc" variant={BackgroundVariant.Dots} />
+						</ReactFlow>
+
+						<DragOverlay dropAnimation={null}>
+							<NodeItem id="dragged-node">
+								{draggableNodeItem
+									? props.availableNodes.find(
+											(node) => node.id === draggableNodeItem,
+										)?.name
+									: ""}
+							</NodeItem>
+						</DragOverlay>
+
+						{Object.entries(participants).map(
+							([id, { username, cursorPosition }]) => {
+								if (!cursorPosition) {
+									return null;
+								}
+
+								const viewport = getViewport();
+
+								return (
+									<div
+										key={id}
+										className="absolute pointer-events-none z-10 -translate-x-1/2 -translate-y-1/2"
+										style={{
+											left: cursorPosition.x * viewport.zoom + viewport.x,
+											top: cursorPosition.y * viewport.zoom + viewport.y,
+										}}
+									>
+										<MousePointer2 />
+										<span className="username">{username}</span>
+									</div>
+								);
+							},
+						)}
+					</div>
+				</Dropzone>
+			</DndContext>
 		</div>
 	);
 };
