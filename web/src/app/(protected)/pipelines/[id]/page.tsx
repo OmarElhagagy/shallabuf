@@ -8,7 +8,7 @@ import { Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { getSessionToken } from "~/lib/auth";
-import type { Pipeline } from "~/lib/dtos";
+import type { Node, Pipeline } from "~/lib/dtos";
 import { Editor } from "./_components/editor";
 
 type Params = Promise<{ id: string }>;
@@ -16,6 +16,7 @@ type Params = Promise<{ id: string }>;
 export default async function PipelineDetails(props: { params: Params }) {
 	const params = await props.params;
 	let pipeline: Pipeline;
+	let availableNodes: Node[] = [];
 
 	const sessionToken = await getSessionToken();
 
@@ -35,6 +36,21 @@ export default async function PipelineDetails(props: { params: Params }) {
 	} catch (error) {
 		console.error(error);
 		return <div>Failed to fetch pipeline</div>;
+	}
+
+	try {
+		const data = await fetch("http://192.168.0.2:8000/api/v0/nodes", {
+			headers: {
+				Accept: "application/json",
+				"Content-Type": "application/json",
+				Authorization: `Bearer ${sessionToken}`,
+			},
+		});
+
+		availableNodes = await data.json();
+	} catch (error) {
+		console.error(error);
+		return <div>Failed to fetch nodes</div>;
 	}
 
 	const nodes: Parameters<typeof useNodesState>[0] = pipeline.nodes.map(
@@ -74,6 +90,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 					nodes={nodes}
 					edges={edges}
 					participants={pipeline.participants ?? []}
+					availableNodes={availableNodes}
 				/>
 			</ReactFlowProvider>
 		</div>

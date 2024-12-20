@@ -52,7 +52,7 @@ pub async fn details(
         SELECT
             p.id AS pipeline_id, p.name, p.description,
             pn.id AS node_id, pn.node_id AS node_node_id, pn.node_version, pn.trigger_id, pn.coords,
-            pc.id AS connection_id, pc.from_node_id, pc.to_node_id
+            pc.id AS "connection_id?", pc.from_node_id AS "from_node_id?", pc.to_node_id AS "to_node_id?"
         FROM
             pipelines p
         LEFT JOIN
@@ -94,12 +94,18 @@ pub async fn details(
     let connections = pipeline
         .iter()
         .filter_map(|row| {
-            if seen_connections.insert(row.connection_id) {
-                Some(PipelineConnection {
-                    id: row.connection_id,
-                    from_node_id: row.from_node_id,
-                    to_node_id: row.to_node_id,
-                })
+            if let (Some(connection_id), Some(from_node_id), Some(to_node_id)) =
+                (row.connection_id, row.from_node_id, row.to_node_id)
+            {
+                if seen_connections.insert(connection_id) {
+                    Some(PipelineConnection {
+                        id: connection_id,
+                        from_node_id,
+                        to_node_id,
+                    })
+                } else {
+                    None
+                }
             } else {
                 None
             }

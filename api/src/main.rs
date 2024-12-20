@@ -36,11 +36,6 @@ struct PipelineNode {
     coords: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct PipelineNodeUpdate {
-    coords: Option<serde_json::Value>,
-}
-
 #[derive(Debug, Serialize)]
 struct PipelineConnection {
     id: Uuid,
@@ -97,41 +92,6 @@ async fn pipelines(
     })?;
 
     Ok(Json(pipelines))
-}
-
-async fn update_pipeline_node(
-    DatabaseConnection(mut conn): DatabaseConnection,
-    Path(id): Path<Uuid>,
-    Json(node): Json<PipelineNodeUpdate>,
-) -> Result<Json<PipelineNode>, StatusCode> {
-    let node = sqlx::query!(
-        r#"
-        UPDATE
-            pipeline_nodes
-        SET
-            coords = COALESCE($1, coords)
-        WHERE
-            id = $2
-        RETURNING
-            id, node_id, node_version, trigger_id, coords
-        "#,
-        node.coords,
-        id
-    )
-    .fetch_one(&mut *conn)
-    .await
-    .map_err(|error| {
-        error!("Database error: {error:?}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(Json(PipelineNode {
-        id: node.id,
-        node_id: node.node_id,
-        node_version: node.node_version,
-        trigger_id: node.trigger_id,
-        coords: node.coords,
-    }))
 }
 
 #[derive(Serialize)]
@@ -294,7 +254,15 @@ async fn main() -> io::Result<()> {
             get(routes::api::v0::pipeline::details),
         )
         .route("/api/v0/trigger/pipelines/:id", post(trigger_pipeline))
-        .route("/api/v0/pipeline_nodes/:id", post(update_pipeline_node))
+        .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
+        .route(
+            "/api/v0/pipeline_nodes",
+            post(routes::api::v0::pipeline_nodes::create),
+        )
+        .route(
+            "/api/v0/pipeline_nodes/:id",
+            post(routes::api::v0::pipeline_nodes::update),
+        )
         .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
         .with_state(app_state)
         .layer(CorsLayer::permissive());
