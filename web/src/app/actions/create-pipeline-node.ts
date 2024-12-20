@@ -24,7 +24,7 @@ export async function createPipelineNodeAction(
  
 
 	if (!response.ok) {
-		throw new Error("Failed to create node");
+		throw new Error(`Failed to create node: ${response.status} - ${await response.text()}`);
 	}
 
 	return response.json();
