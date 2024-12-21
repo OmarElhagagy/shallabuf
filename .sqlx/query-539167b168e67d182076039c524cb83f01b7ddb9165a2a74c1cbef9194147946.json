@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO\n            pipeline_node_connections (to_pipeline_node_input_id, from_pipeline_node_output_id)\n        VALUES\n            ($1, $2)\n        RETURNING\n            id, to_pipeline_node_input_id, from_pipeline_node_output_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "to_pipeline_node_input_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "from_pipeline_node_output_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "539167b168e67d182076039c524cb83f01b7ddb9165a2a74c1cbef9194147946"
+}

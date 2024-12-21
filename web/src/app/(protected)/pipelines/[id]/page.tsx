@@ -66,6 +66,20 @@ export default async function PipelineDetails(props: { params: Params }) {
 				data: {
 					name: `${node?.name}:${pipeline_node.node_version}`,
 					config: node?.config,
+					inputs: pipeline_node.inputs.map((input) => ({
+						...input,
+						controlled: pipeline.nodes.some((node) => {
+							return node.outputs.some((output) => {
+								return pipeline.connections.some((connection) => {
+									return (
+										connection.from_pipeline_node_output_id === output.id &&
+										connection.to_pipeline_node_input_id === input.id
+									);
+								});
+							});
+						}),
+					})),
+					outputs: pipeline_node.outputs,
 				},
 			};
 		},
@@ -74,8 +88,24 @@ export default async function PipelineDetails(props: { params: Params }) {
 	const edges: Parameters<typeof useEdgesState>[0] = pipeline.connections.map(
 		(connection) => ({
 			id: connection.id,
-			source: connection.from_node_id,
-			target: connection.to_node_id,
+			source:
+				pipeline.nodes.find((node) => {
+					return node.outputs.some((output) => {
+						return output.id === connection.from_pipeline_node_output_id;
+					});
+				})?.id ?? "",
+			target:
+				pipeline.nodes.find((node) => {
+					return node.inputs.some((input) => {
+						return input.id === connection.to_pipeline_node_input_id;
+					});
+				})?.id ?? "",
+			animated: true,
+			deletable: true,
+			focusable: true,
+			sourceHandle: connection.from_pipeline_node_output_id,
+			targetHandle: connection.to_pipeline_node_input_id,
+			selectable: true,
 		}),
 	);
 

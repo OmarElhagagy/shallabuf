@@ -39,8 +39,8 @@ struct PipelineNode {
 #[derive(Debug, Serialize)]
 struct PipelineConnection {
     id: Uuid,
-    from_node_id: Uuid,
-    to_node_id: Uuid,
+    to_pipeline_node_input_id: Uuid,
+    from_pipeline_node_output_id: Uuid,
 }
 
 #[derive(Debug, Serialize)]
@@ -96,7 +96,7 @@ async fn pipelines(
 
 #[derive(Serialize)]
 struct PipelineTriggerResponse {
-    pipeline_exec_id: Uuid,
+    pipeline_execs_id: Uuid,
 }
 
 async fn trigger_pipeline(
@@ -111,16 +111,16 @@ async fn trigger_pipeline(
         StatusCode::BAD_REQUEST
     })?;
 
-    // let pipeline_exec_id = sqlx::query_as(
+    // let pipeline_execs_id = sqlx::query_as(
     //     r"
-    //     INSERT INTO pipeline_exec (pipeline_id)
+    //     INSERT INTO pipeline_execs (pipeline_id)
     //     VALUES ($1)
     //     RETURNING id
     //     ",
     //     pipeline_id,
     // );
 
-    // let pipeline_exec = pipeline_exec::Entity::insert(pipeline_exec::ActiveModel {
+    // let pipeline_execs = pipeline_execs::Entity::insert(pipeline_execs::ActiveModel {
     //     pipeline_id: Set(pipeline_id),
     //     ..Default::default()
     // })
@@ -133,12 +133,12 @@ async fn trigger_pipeline(
 
     // info!(
     //     "Pipeline execution record created with id: {}",
-    //     pipeline_exec.last_insert_id
+    //     pipeline_execs.last_insert_id
     // );
 
     // let payload_bytes = serde_json::to_string(&dtos::PipelineExecPayload {
     //     pipeline_id,
-    //     pipeline_exec_id: pipeline_exec.last_insert_id,
+    //     pipeline_execs_id: pipeline_execs.last_insert_id,
     //     params,
     // })
     // .map_err(|error| {
@@ -151,17 +151,17 @@ async fn trigger_pipeline(
     //     error!("Failed to publish message to JetStream: {error:?}");
     // } else {
     //     debug!(
-    //         "Published message to JetStream for pipeline_exec_id: {}",
-    //         pipeline_exec.last_insert_id
+    //         "Published message to JetStream for pipeline_execs_id: {}",
+    //         pipeline_execs.last_insert_id
     //     );
     // }
 
     // Ok(Json(PipelineTriggerResponse {
-    //     pipeline_exec_id: pipeline_exec.last_insert_id
+    //     pipeline_execs_id: pipeline_execs.last_insert_id
     // }))
 
     Ok(Json(PipelineTriggerResponse {
-        pipeline_exec_id: Uuid::new_v4(),
+        pipeline_execs_id: Uuid::new_v4(),
     }))
 }
 
@@ -264,8 +264,8 @@ async fn main() -> io::Result<()> {
             post(routes::api::v0::pipeline_nodes::update),
         )
         .route(
-            "/api/v0/pipeline_nodes_connections",
-            post(routes::api::v0::pipeline_nodes_connections::create),
+            "/api/v0/pipeline_node_connections",
+            post(routes::api::v0::pipeline_node_connections::create),
         )
         .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
         .with_state(app_state)

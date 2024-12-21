@@ -79,10 +79,10 @@ async fn main() -> Result<(), async_nats::Error> {
 
     //         let mut runs = runs_clone.write().await;
 
-    //         let Some(pipeline_run) = runs.get_mut(&payload.pipeline_exec_id) else {
+    //         let Some(pipeline_run) = runs.get_mut(&payload.pipeline_execs_id) else {
     //             error!(
     //                 "Pipeline run not found for ID: {}",
-    //                 payload.pipeline_exec_id
+    //                 payload.pipeline_execs_id
     //             );
 
     //             continue;
@@ -93,7 +93,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 sea_orm::DatabaseBackend::Postgres,
     //                 r"
     //                     UPDATE
-    //                         pipeline_nodes_exec
+    //                         pipeline_node_execs
     //                     SET
     //                         status = $1::exec_status,
     //                         result = $2,
@@ -119,7 +119,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //         pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
 
     //         let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
-    //             pipeline_exec_id: payload.pipeline_exec_id,
+    //             pipeline_execs_id: payload.pipeline_execs_id,
     //         }) {
     //             Ok(payload) => payload.into(),
     //             Err(error) => {
@@ -135,8 +135,8 @@ async fn main() -> Result<(), async_nats::Error> {
     //             error!("Failed to publish message to JetStream: {error:?}");
     //         } else {
     //             info!(
-    //                 "Published message to JetStream for pipeline_exec_id: {}",
-    //                 payload.pipeline_exec_id
+    //                 "Published message to JetStream for pipeline_execs_id: {}",
+    //                 payload.pipeline_execs_id
     //             );
     //         }
     //     }
@@ -145,12 +145,12 @@ async fn main() -> Result<(), async_nats::Error> {
     // let nats_client_clone = nats_client.clone();
     // let runs_clone = Arc::clone(&runs);
     // // let db_clone = Arc::clone(&db);
-    // let mut pipeline_exec_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
+    // let mut pipeline_execs_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
 
     // tokio::spawn(async move {
     //     let db = db_clone;
 
-    //     while let Some(message) = pipeline_exec_subscriber.next().await {
+    //     while let Some(message) = pipeline_execs_subscriber.next().await {
     //         let payload =
     //             match serde_json::from_slice::<dtos::PipelineExecPayload>(&message.payload) {
     //                 Ok(payload) => payload,
@@ -165,21 +165,21 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 sea_orm::DatabaseBackend::Postgres,
     //                 r"
     //                     UPDATE
-    //                         pipeline_exec
+    //                         pipeline_execs
     //                     SET
     //                         status = $1::exec_status,
     //                         started_at = NOW()
     //                     WHERE
     //                         id = $2;
     //                 ",
-    //                 [ExecStatus::Running.into(), payload.pipeline_exec_id.into()],
+    //                 [ExecStatus::Running.into(), payload.pipeline_execs_id.into()],
     //             ))
     //             .await
     //         {
     //             Ok(_) => {
     //                 info!(
-    //                     "Pipeline execution status updated to 'running', pipeline_exec_id: {}",
-    //                     payload.pipeline_exec_id
+    //                     "Pipeline execution status updated to 'running', pipeline_execs_id: {}",
+    //                     payload.pipeline_execs_id
     //                 );
     //             }
     //             Err(error) => {
@@ -198,15 +198,15 @@ async fn main() -> Result<(), async_nats::Error> {
     //                         nodes.publisher_name,
     //                         nodes.name,
     //                         nodes.container_type::TEXT AS container_type,
-    //                         pipeline_nodes_connections.to_node_id
+    //                         pipeline_node_connections.from_pipeline_node_output_id
     //                     FROM
     //                         pipeline_nodes
     //                     LEFT JOIN
     //                         nodes ON pipeline_nodes.node_id = nodes.id
     //                     LEFT JOIN
-    //                         pipeline_nodes_connections
-    //                         ON pipeline_nodes.id = pipeline_nodes_connections.from_node_id
-    //                         OR pipeline_nodes.id = pipeline_nodes_connections.to_node_id
+    //                         pipeline_node_connections
+    //                         ON pipeline_nodes.id = pipeline_node_connections.to_pipeline_node_input_id
+    //                         OR pipeline_nodes.id = pipeline_node_connections.from_pipeline_node_output_id
     //                     WHERE
     //                         pipeline_nodes.pipeline_id = $1;
     //                 ",
@@ -231,10 +231,10 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 .entry(pipeline_node.id)
     //                 .or_insert_with(|| (graph.add_node(pipeline_node.id), pipeline_node));
 
-    //             if let Some(to_node_id) = pipeline_node.to_node_id {
+    //             if let Some(from_pipeline_node_output_id) = pipeline_node.from_pipeline_node_output_id {
     //                 let (child_index, _) = *graph_nodes
-    //                     .entry(to_node_id)
-    //                     .or_insert_with(|| (graph.add_node(to_node_id), pipeline_node));
+    //                     .entry(from_pipeline_node_output_id)
+    //                     .or_insert_with(|| (graph.add_node(from_pipeline_node_output_id), pipeline_node));
 
     //                 if node_index != child_index {
     //                     graph.add_edge(node_index, child_index, ());
@@ -242,7 +242,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //             }
     //         }
 
-    //         let mut pipeline_nodes_exec_payloads: HashMap<Uuid, dtos::PipelineNodeExecPayload> =
+    //         let mut pipeline_node_execs_payloads: HashMap<Uuid, dtos::PipelineNodeExecPayload> =
     //             HashMap::new();
 
     //         // Because sea-orm doesn't support RETURNING the inserted ids (plural) from INSERT INTO stmt, we need to use a raw SQL
@@ -252,11 +252,11 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 format!(
     //                     r"
     //                         INSERT INTO
-    //                             pipeline_nodes_exec (pipeline_exec_id, pipeline_node_id)
+    //                             pipeline_node_execs (pipeline_execs_id, pipeline_node_id)
     //                         VALUES
     //                             {}
     //                         RETURNING
-    //                             pipeline_nodes_exec.id, pipeline_nodes_exec.pipeline_node_id;
+    //                             pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id;
     //                     ",
     //                     (1..=graph_nodes.keys().len())
     //                         .map(|i| format!("(${}, ${})", i + i - 1, i + i))
@@ -266,7 +266,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 graph_nodes
     //                     .keys()
     //                     .flat_map(|pipeline_node_id| {
-    //                         [payload.pipeline_exec_id.into(), (*pipeline_node_id).into()]
+    //                         [payload.pipeline_execs_id.into(), (*pipeline_node_id).into()]
     //                     })
     //                     .collect::<Vec<_>>(),
     //             ))
@@ -277,7 +277,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //                     let pipeline_node_exec_id = match row.try_get_by_index(0) {
     //                         Ok(pipeline_node_exec_id) => pipeline_node_exec_id,
     //                         Err(error) => {
-    //                             error!("Failed to get pipeline_nodes_exec_id: {error:?}");
+    //                             error!("Failed to get pipeline_node_execs_id: {error:?}");
     //                             continue;
     //                         }
     //                     };
@@ -311,10 +311,10 @@ async fn main() -> Result<(), async_nats::Error> {
     //                     //     }
     //                     // };
 
-    //                     // pipeline_nodes_exec_payloads.insert(
+    //                     // pipeline_node_execs_payloads.insert(
     //                     //     pipeline_node_id,
     //                     //     dtos::PipelineNodeExecPayload {
-    //                     //         pipeline_exec_id: payload.pipeline_exec_id,
+    //                     //         pipeline_execs_id: payload.pipeline_execs_id,
     //                     //         pipeline_node_exec_id,
     //                     //         container_type,
     //                     //         path: format!(
@@ -338,12 +338,12 @@ async fn main() -> Result<(), async_nats::Error> {
     //             }
     //         };
 
-    //         let pipeline_run = PipelineRun::new(graph, pipeline_nodes_exec_payloads);
+    //         let pipeline_run = PipelineRun::new(graph, pipeline_node_execs_payloads);
     //         let mut runs = runs_clone.write().await;
-    //         runs.insert(payload.pipeline_exec_id, pipeline_run.clone());
+    //         runs.insert(payload.pipeline_execs_id, pipeline_run.clone());
 
     //         let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
-    //             pipeline_exec_id: payload.pipeline_exec_id,
+    //             pipeline_execs_id: payload.pipeline_execs_id,
     //         }) {
     //             Ok(payload) => payload.into(),
     //             Err(error) => {
@@ -359,8 +359,8 @@ async fn main() -> Result<(), async_nats::Error> {
     //             error!("Failed to publish message to JetStream: {error:?}");
     //         } else {
     //             info!(
-    //                 "Published message to JetStream for pipeline_exec_id: {}",
-    //                 payload.pipeline_exec_id
+    //                 "Published message to JetStream for pipeline_execs_id: {}",
+    //                 payload.pipeline_execs_id
     //             );
     //         }
     //     }
@@ -386,10 +386,10 @@ async fn main() -> Result<(), async_nats::Error> {
 
     //         let runs = runs_clone.read().await;
 
-    //         let Some(pipeline_run) = runs.get(&payload.pipeline_exec_id) else {
+    //         let Some(pipeline_run) = runs.get(&payload.pipeline_execs_id) else {
     //             error!(
     //                 "Pipeline run not found for ID: {}",
-    //                 payload.pipeline_exec_id
+    //                 payload.pipeline_execs_id
     //             );
 
     //             continue;
@@ -398,14 +398,14 @@ async fn main() -> Result<(), async_nats::Error> {
     //         let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
 
     //         if nodes_to_be_executed.is_empty() {
-    //             info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);
+    //             info!("Pipeline run finished for ID: {}", payload.pipeline_execs_id);
 
     //             match db
     //                 .query_one(Statement::from_sql_and_values(
     //                     sea_orm::DatabaseBackend::Postgres,
     //                     r"
     //                         UPDATE
-    //                             pipeline_exec
+    //                             pipeline_execs
     //                         SET
     //                             status = $1::exec_status,
     //                             finished_at = NOW()
@@ -414,18 +414,18 @@ async fn main() -> Result<(), async_nats::Error> {
     //                     ",
     //                     [
     //                         ExecStatus::Completed.into(),
-    //                         payload.pipeline_exec_id.into(),
+    //                         payload.pipeline_execs_id.into(),
     //                     ],
     //                 ))
     //                 .await
     //             {
     //                 Ok(_) => {
-    //                     info!("Pipeline execution status updated to 'completed', pipeline_exec_id: {}", payload.pipeline_exec_id);
+    //                     info!("Pipeline execution status updated to 'completed', pipeline_execs_id: {}", payload.pipeline_execs_id);
     //                 }
     //                 Err(error) => {
     //                     error!(
-    //                         "Failed to update pipeline execution status, error {error:?}, pipeline_exec_id: {}",
-    //                         payload.pipeline_exec_id
+    //                         "Failed to update pipeline execution status, error {error:?}, pipeline_execs_id: {}",
+    //                         payload.pipeline_execs_id
     //                     );
     //                 }
     //             }
@@ -438,7 +438,7 @@ async fn main() -> Result<(), async_nats::Error> {
     //                 sea_orm::DatabaseBackend::Postgres,
     //                 r"
     //                     UPDATE
-    //                         pipeline_nodes_exec
+    //                         pipeline_node_execs
     //                     SET
     //                         status = $1::exec_status,
     //                         started_at = NOW()

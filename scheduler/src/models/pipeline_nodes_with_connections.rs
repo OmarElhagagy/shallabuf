@@ -22,5 +22,5 @@ pub struct PipelineNodesWithConnections {
     pub publisher_name: String,
     pub name: String,
     pub container_type: Option<String>,
-    pub to_node_id: Option<Uuid>,
+    pub from_pipeline_node_output_id: Option<Uuid>,
 }

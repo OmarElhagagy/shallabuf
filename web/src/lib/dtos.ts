@@ -24,6 +24,8 @@ export interface PipelineNode {
 	node_id: string;
 	node_version: string;
 	trigger_id?: string;
+	inputs: { id: string; key: string }[];
+	outputs: { id: string; key: string }[];
 	coords: {
 		x: number;
 		y: number;
@@ -32,8 +34,8 @@ export interface PipelineNode {
 
 export interface PipelineConnection {
 	id: string;
-	from_node_id: string;
-	to_node_id: string;
+	to_pipeline_node_input_id: string;
+	from_pipeline_node_output_id: string;
 }
 
 export enum NodeType {
@@ -82,10 +84,12 @@ export const isTaskNodeConfigV0InputBinary = (
 	return input === "binary";
 };
 
+export type TaskNodeConfigV0Output = "text" | "status" | "binary";
+
 export interface TaskNodeConfigV0 {
 	version: "v0";
 	inputs: {
-		name: string;
+		key: string;
 		input: TaskNodeConfigV0Input;
 		label: {
 			[key: string]: string;
@@ -93,7 +97,13 @@ export interface TaskNodeConfigV0 {
 		description?: string;
 		required: boolean;
 	}[];
-	outputs: string[];
+	outputs: {
+		key: string;
+		output: TaskNodeConfigV0Output;
+		label: {
+			[key: string]: string;
+		};
+	}[];
 }
 
 export type TaskNodeConfig = TaskNodeConfigV0;

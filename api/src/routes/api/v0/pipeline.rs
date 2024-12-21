@@ -4,16 +4,64 @@ use axum::{extract::Path, Json};
 use axum_extra::extract::Query;
 use hyper::StatusCode;
 use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     app_state::{DatabaseConnection, RedisConnection},
     extractors::session::Session,
     utils::internal_error,
-    Pipeline, PipelineConnection, PipelineNode, PipelineParticipant,
 };
 
 use super::events::to_pipeline_participant_redis_key;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Input {
+    id: Uuid,
+    key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Output {
+    id: Uuid,
+    key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Node {
+    id: Uuid,
+    node_id: Uuid,
+    node_version: String,
+    trigger_id: Option<Uuid>,
+    coords: serde_json::Value,
+    inputs: Vec<Input>,
+    outputs: Vec<Output>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PipelineConnection {
+    id: Uuid,
+    to_pipeline_node_input_id: Uuid,
+    from_pipeline_node_output_id: Uuid,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PipelineParticipant {
+    pub id: Uuid,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Pipeline {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+    nodes: Vec<Node>,
+    connections: Vec<PipelineConnection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    participants: Option<Vec<PipelineParticipant>>,
+}
 
 #[derive(Debug, PartialEq, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,13 +100,18 @@ pub async fn details(
         SELECT
             p.id AS pipeline_id, p.name, p.description,
             pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,
-            pc.id AS "connection_id?", pc.from_node_id AS "from_node_id?", pc.to_node_id AS "to_node_id?"
+            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key as "output_key?",
+            pc.id AS "connection_id?", pc.to_pipeline_node_input_id as "to_pipeline_node_input_id?", pc.from_pipeline_node_output_id as "from_pipeline_node_output_id?"
         FROM
             pipelines p
         LEFT JOIN
             pipeline_nodes pn ON pn.pipeline_id = p.id
         LEFT JOIN
-            pipeline_nodes_connections pc ON pc.from_node_id = pn.id OR pc.to_node_id = pn.id
+            pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id
+        LEFT JOIN
+            pipeline_node_outputs pno ON pno.pipeline_node_id = pn.id
+        LEFT JOIN
+            pipeline_node_connections pc ON pc.to_pipeline_node_input_id = pni.id OR pc.from_pipeline_node_output_id = pno.id
         WHERE
             p.id = $1
         "#,
@@ -73,35 +126,67 @@ pub async fn details(
     }
 
     let mut seen_nodes = HashSet::new();
-    let nodes = pipeline
-        .iter()
-        .filter_map(|row| {
-            if seen_nodes.insert(row.node_id) {
-                Some(PipelineNode {
+    let mut nodes_map = std::collections::HashMap::new();
+
+    for row in &pipeline {
+        if seen_nodes.insert(row.node_id) {
+            nodes_map.insert(
+                row.node_id,
+                Node {
                     id: row.pipeline_node_id,
                     node_id: row.node_id,
                     node_version: row.node_version.clone(),
                     trigger_id: row.trigger_id,
                     coords: row.coords.clone(),
-                })
-            } else {
-                None
+                    inputs: Vec::new(),
+                    outputs: Vec::new(),
+                },
+            );
+        }
+    }
+
+    for row in &pipeline {
+        if let Some(node) = nodes_map.get_mut(&row.node_id) {
+            if let Some(input_id) = row.input_id {
+                if !node.inputs.iter().any(|input| input.id == input_id) {
+                    node.inputs.push(Input {
+                        id: input_id,
+                        key: row.input_key.clone().unwrap(),
+                    });
+                }
             }
-        })
-        .collect();
+
+            if let Some(output_id) = row.output_id {
+                if !node.outputs.iter().any(|output| output.id == output_id) {
+                    node.outputs.push(Output {
+                        id: output_id,
+                        key: row.output_key.clone().unwrap(),
+                    });
+                }
+            }
+        }
+    }
+
+    let nodes: Vec<Node> = nodes_map.into_values().collect();
 
     let mut seen_connections = HashSet::new();
     let connections = pipeline
         .iter()
         .filter_map(|row| {
-            if let (Some(connection_id), Some(from_node_id), Some(to_node_id)) =
-                (row.connection_id, row.from_node_id, row.to_node_id)
-            {
-                if seen_connections.insert(connection_id) {
+            if let (
+                Some(connection_id),
+                Some(to_pipeline_node_input_id),
+                Some(from_pipeline_node_output_id),
+            ) = (
+                row.connection_id,
+                row.to_pipeline_node_input_id,
+                row.from_pipeline_node_output_id,
+            ) {
+                if seen_connections.insert(row.connection_id) {
                     Some(PipelineConnection {
                         id: connection_id,
-                        from_node_id,
-                        to_node_id,
+                        to_pipeline_node_input_id,
+                        from_pipeline_node_output_id,
                     })
                 } else {
                     None
