@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO pipeline_node_connections (from_pipeline_node_output_id, to_pipeline_node_input_id)\n        VALUES ($1, $2)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2845d5cd7f6116f4d5ab8361559a1795198a734dec330aa8628964411a544a0d"
+}
