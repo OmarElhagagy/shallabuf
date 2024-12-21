@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        INSERT INTO nodes (name, description, publisher_name, container_type, config)\n        VALUES ($1, $2, $3, $4, $5)\n        RETURNING id\n        ",
+  "query": "\n        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)\n        VALUES ($1, $2, $3, $4, $5, $6)\n        RETURNING id\n        ",
   "describe": {
     "columns": [
       {
@@ -11,6 +11,7 @@
     ],
     "parameters": {
       "Left": [
+        "Varchar",
         "Varchar",
         "Varchar",
         "Varchar",
@@ -32,5 +33,5 @@
       false
     ]
   },
-  "hash": "f3c2e9fb16481b06f01307141e70bb4e0dabc64a63381bc789f3464d07d237f0"
+  "hash": "4bcbe975df4d71e55514aa3d8166b9ac7fcabc192a47ad043dc891b3003401a4"
 }

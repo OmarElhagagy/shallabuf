@@ -8,7 +8,7 @@ import { Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
 import { getSessionToken } from "~/lib/auth";
-import type { Node, Pipeline } from "~/lib/dtos";
+import { type Node, NodeType, type Pipeline } from "~/lib/dtos";
 import { Editor } from "./_components/editor";
 
 type Params = Promise<{ id: string }>;
@@ -54,13 +54,21 @@ export default async function PipelineDetails(props: { params: Params }) {
 	}
 
 	const nodes: Parameters<typeof useNodesState>[0] = pipeline.nodes.map(
-		(node) => ({
-			id: node.id,
-			position: node.coords,
-			data: {
-				label: node.id,
-			},
-		}),
+		(pipeline_node) => {
+			const node = availableNodes.find(
+				(available_node) => available_node.id === pipeline_node.node_id,
+			);
+
+			return {
+				id: pipeline_node.id,
+				position: pipeline_node.coords,
+				type: NodeType.Task,
+				data: {
+					name: `${node?.name}:${pipeline_node.node_version}`,
+					config: node?.config,
+				},
+			};
+		},
 	);
 
 	const edges: Parameters<typeof useEdgesState>[0] = pipeline.connections.map(

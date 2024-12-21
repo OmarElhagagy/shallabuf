@@ -1,9 +1,9 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
     Argon2,
 };
 use std::collections::HashMap;
-use uuid::Uuid; // Added import for argon2
+use uuid::Uuid;
 
 use crate::dtos::{
     KeyProviderType, NodeConfig, NodeConfigV0, NodeContainerType, NodeInput, NodeInputType,
@@ -26,7 +26,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     let alex_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174003").unwrap();
     let bob_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174004").unwrap();
 
-    // Insert into organizations with fixed UUID and fancy name
     let organization = sqlx::query!(
         r#"
         INSERT INTO organizations (id, name)
@@ -39,7 +38,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into teams
     let team = sqlx::query!(
         r#"
         INSERT INTO teams (id, name, organization_id)
@@ -70,7 +68,7 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         alex_id,
         "Alex",
         "alex@mail.com",
-        hashed_password, // Replaced bcrypt hash with argon2 hash
+        hashed_password,
         true,
         organization_id
     )
@@ -146,7 +144,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .execute(db)
     .await?;
 
-    // Insert into pipelines
     let pipeline = sqlx::query!(
         r#"
         INSERT INTO pipelines (id, name, description, team_id)
@@ -161,7 +158,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_triggers
     let pipeline_trigger_config =
         serde_json::to_value(PipelineTriggerConfig::V0(PipelineTriggerConfigV0 {
             allow_manual_execution: true,
@@ -180,7 +176,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into nodes (echo_node)
     let echo_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
         inputs: vec![NodeInput {
             name: "message".to_string(),
@@ -201,11 +196,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let echo_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
         "Echo",
+        "echo",
         Some("A simple node that echoes the message it receives.".to_string()),
         "shallabuf",
         NodeContainerType::Wasm as NodeContainerType,
@@ -214,7 +210,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into nodes (transformer_node)
     let transformer_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
         inputs: vec![
             NodeInput {
@@ -268,11 +263,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let transformer_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
         "Transformer",
+        "transformer",
         Some("A simple node that transforms the message it receives.".to_string()),
         "shallabuf",
         NodeContainerType::Wasm as NodeContainerType,
@@ -281,7 +277,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into nodes (image_generator_node)
     let image_generator_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
         inputs: vec![
             NodeInput {
@@ -311,17 +306,18 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
                 required: false,
             },
         ],
-        outputs: vec![NodeOutputType::Text],
+        outputs: vec![NodeOutputType::Binary],
     }))
     .unwrap();
 
     let image_generator_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
         "Image Generator",
+        "image_generator",
         Some("A simple node that generates an image.".to_string()),
         "shallabuf",
         NodeContainerType::Wasm as NodeContainerType,
@@ -330,7 +326,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into nodes (post_to_fb_node)
     let post_to_fb_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
         inputs: vec![
             NodeInput {
@@ -358,17 +353,18 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
                 required: false,
             },
         ],
-        outputs: vec![NodeOutputType::Text],
+        outputs: vec![NodeOutputType::Status],
     }))
     .unwrap();
 
     let post_to_fb_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
+        VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING id
         "#,
         "Post to Facebook",
+        "post_to_fb",
         Some("A simple node that posts to Facebook.".to_string()),
         "shallabuf",
         NodeContainerType::Wasm as NodeContainerType,
@@ -377,7 +373,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_nodes (echo_pipeline_node)
     let echo_pipeline_node = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes (pipeline_id, node_id, trigger_id, coords, node_version)
@@ -388,15 +383,14 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         echo_node.id,
         Some(pipeline_trigger.id),
         serde_json::json!({
-            "x": 100,
-            "y": 100
+            "x": 2.0,
+            "y": -92.0,
         }),
-        "latest"
+        "v1"
     )
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_nodes (transformer_pipeline_node)
     let transformer_pipeline_node = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes (pipeline_id, node_id, coords, node_version)
@@ -406,15 +400,14 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         pipeline.id,
         transformer_node.id,
         serde_json::json!({
-            "x": 300,
-            "y": 100
+            "x": 285.0,
+            "y": -18.0,
         }),
-        "latest"
+        "v1"
     )
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_nodes_connections (echo_to_transformer_pipeline_connection)
     let _echo_to_transformer_pipeline_connection = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes_connections (from_node_id, to_node_id)
@@ -426,7 +419,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .execute(db)
     .await?;
 
-    // Insert into pipeline_nodes (post_to_fb_pipeline_node)
     let post_to_fb_pipeline_node = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes (pipeline_id, node_id, coords, node_version)
@@ -436,15 +428,14 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         pipeline.id,
         post_to_fb_node.id,
         serde_json::json!({
-            "x": 500,
-            "y": 100
+            "x": 620.0,
+            "y": -109.0,
         }),
-        "latest"
+        "v1"
     )
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_nodes_connections (transformer_to_post_to_fb_pipeline_connection)
     let _transformer_to_post_to_fb_pipeline_connection = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes_connections (from_node_id, to_node_id)
@@ -456,7 +447,6 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .execute(db)
     .await?;
 
-    // Insert into pipeline_nodes (image_generator_pipeline_node)
     let image_generator_pipeline_node = sqlx::query!(
         r#"
             INSERT INTO pipeline_nodes (pipeline_id, node_id, coords, node_version)
@@ -466,15 +456,14 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         pipeline.id,
         image_generator_node.id,
         serde_json::json!({
-            "x": 700,
-            "y": 100
+            "x": 284.0,
+            "y": -282.0,
         }),
-        "latest"
+        "v1"
     )
     .fetch_one(db)
     .await?;
 
-    // Insert into pipeline_nodes_connections (image_generator_to_post_to_fb_pipeline_connection)
     let _image_generator_to_post_to_fb_pipeline_connection = sqlx::query!(
         r#"
         INSERT INTO pipeline_nodes_connections (from_node_id, to_node_id)

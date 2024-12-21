@@ -45,15 +45,17 @@ CREATE TABLE IF NOT EXISTS pipeline_triggers (
 CREATE TABLE IF NOT EXISTS nodes (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR NOT NULL,
+    identifier_name VARCHAR NOT NULL,
     publisher_name VARCHAR NOT NULL,
+    version VARCHAR NOT NULL DEFAULT 'v1',
     description VARCHAR,
     config JSON NOT NULL,
     container_type node_container_type NOT NULL,
     tags TEXT[] NOT NULL DEFAULT '{}',
-    versions TEXT[] NOT NULL DEFAULT '{"latest"}',
     visibility visibility NOT NULL DEFAULT 'public',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (identifier_name, publisher_name, version)
 );
 
 -- Create 'pipeline_exec' table
@@ -116,6 +118,9 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_nodes_connections_to_node_id
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_nodes_pipeline_id
     ON pipeline_nodes(pipeline_id);
+
+CREATE INDEX IF NOT EXISTS idx_nodes_name
+    ON nodes(identifier_name, publisher_name, version);
 
 -- Create triggers
 CREATE TRIGGER set_updated_at_templates

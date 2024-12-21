@@ -10,6 +10,7 @@ pub struct Node {
     pub id: Uuid,
     pub name: String,
     pub description: Option<String>,
+    pub config: serde_json::Value,
 }
 
 pub async fn list(
@@ -18,7 +19,7 @@ pub async fn list(
     let nodes = sqlx::query!(
         r#"
         SELECT
-            id, name, description
+            id, name, description, config
         FROM
             nodes
         "#,
@@ -31,6 +32,7 @@ pub async fn list(
                 id: row.id,
                 name: row.name.clone(),
                 description: row.description.clone(),
+                config: row.config.clone(),
             })
             .collect::<Vec<Node>>()
     })

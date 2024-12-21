@@ -11,6 +11,7 @@ import {
 	type OnConnect,
 	Panel,
 	ReactFlow,
+	type ReactFlowProps,
 	addEdge,
 	useEdgesState,
 	useNodesState,
@@ -34,6 +35,7 @@ import type { Node, PipelineNode, PipelineParticipant } from "~/lib/dtos";
 import type { WsStoreState } from "~/stores/ws-store";
 import { Dropzone } from "./dropzone";
 import { NodeItem } from "./node-item";
+import { TaskNode } from "./task-node";
 
 export interface EditorProps {
 	nodes: Parameters<typeof useNodesState>[0];
@@ -41,6 +43,10 @@ export interface EditorProps {
 	participants: PipelineParticipant[];
 	availableNodes: Node[];
 }
+
+const nodeTypes: ReactFlowProps["nodeTypes"] = {
+	task: TaskNode,
+};
 
 export const Editor = (props: EditorProps) => {
 	const [nodes, setNodes, onNodesChange] = useNodesState(props.nodes);
@@ -250,6 +256,7 @@ export const Editor = (props: EditorProps) => {
 							onConnect={onConnect}
 							onNodeDragStop={saveNodePosition}
 							onNodeDrag={broadcastNodePosition}
+							nodeTypes={nodeTypes}
 							fitView
 							proOptions={{
 								hideAttribution: true,
