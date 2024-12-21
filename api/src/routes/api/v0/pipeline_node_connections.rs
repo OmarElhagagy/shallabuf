@@ -8,16 +8,16 @@ use crate::{app_state::DatabaseConnection, utils::internal_error};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineNodeConnectionCreate {
-    from_node_id: Uuid,
-    to_node_id: Uuid,
+    to_pipeline_node_input_id: Uuid,
+    from_pipeline_node_output_id: Uuid,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineNodeConnection {
     id: Uuid,
-    from_node_id: Uuid,
-    to_node_id: Uuid,
+    to_pipeline_node_input_id: Uuid,
+    from_pipeline_node_output_id: Uuid,
 }
 
 pub async fn create(
@@ -27,14 +27,14 @@ pub async fn create(
     let connection = sqlx::query!(
         r#"
         INSERT INTO
-            pipeline_nodes_connections (from_node_id, to_node_id)
+            pipeline_node_connections (to_pipeline_node_input_id, from_pipeline_node_output_id)
         VALUES
             ($1, $2)
         RETURNING
-            id, from_node_id, to_node_id
+            id, to_pipeline_node_input_id, from_pipeline_node_output_id
         "#,
-        payload.from_node_id,
-        payload.to_node_id
+        payload.to_pipeline_node_input_id,
+        payload.from_pipeline_node_output_id
     )
     .fetch_one(&mut *conn)
     .await
@@ -42,7 +42,7 @@ pub async fn create(
 
     Ok(Json(PipelineNodeConnection {
         id: connection.id,
-        from_node_id: connection.from_node_id,
-        to_node_id: connection.to_node_id,
+        to_pipeline_node_input_id: connection.to_pipeline_node_input_id,
+        from_pipeline_node_output_id: connection.from_pipeline_node_output_id,
     }))
 }

@@ -21,10 +21,10 @@ async fn main() -> Result<(), async_nats::Error> {
         .await
         .expect("Failed to connect to NATS");
 
-    let mut pipeline_nodes_exec_subscriber = nats_client.subscribe("pipeline.node.exec").await?;
+    let mut pipeline_node_execs_subscriber = nats_client.subscribe("pipeline.node.exec").await?;
 
     tokio::spawn(async move {
-        while let Some(message) = pipeline_nodes_exec_subscriber.next().await {
+        while let Some(message) = pipeline_node_execs_subscriber.next().await {
             let payload =
                 match serde_json::from_slice::<dtos::PipelineNodeExecPayload>(&message.payload) {
                     Ok(payload) => payload,
@@ -101,7 +101,7 @@ async fn main() -> Result<(), async_nats::Error> {
             };
 
             let payload_bytes = match serde_json::to_string(&dtos::PipelineNodeExecResultPayload {
-                pipeline_exec_id: payload.pipeline_exec_id,
+                pipeline_execs_id: payload.pipeline_execs_id,
                 pipeline_node_exec_id: payload.pipeline_node_exec_id,
                 result,
             }) {

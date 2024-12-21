@@ -8,6 +8,6 @@ pub type PipelineExecPayloadParams = HashMap<Uuid, serde_json::Value>;
 #[derive(Serialize, Deserialize)]
 pub struct PipelineExecPayload {
     pub pipeline_id: Uuid,
-    pub pipeline_exec_id: Uuid,
+    pub pipeline_execs_id: Uuid,
     pub params: PipelineExecPayloadParams,
 }

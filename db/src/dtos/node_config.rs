@@ -25,7 +25,7 @@ pub enum NodeInputType {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeInput {
-    pub name: String,
+    pub key: String,
     pub input: NodeInputType,
     pub label: Option<HashMap<String, String>>,
     pub required: bool,
@@ -42,9 +42,18 @@ pub enum NodeOutputType {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct NodeOutput {
+    pub key: String,
+    pub output: NodeOutputType,
+    pub label: Option<HashMap<String, String>>,
+    pub description: Option<HashMap<String, String>>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeConfigV0 {
     pub inputs: Vec<NodeInput>,
-    pub outputs: Vec<NodeOutputType>,
+    pub outputs: Vec<NodeOutput>,
 }
 
 #[derive(Serialize, Deserialize)]

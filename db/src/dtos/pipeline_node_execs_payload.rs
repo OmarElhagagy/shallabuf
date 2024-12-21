@@ -23,7 +23,7 @@ use super::NodeContainerType;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PipelineNodeExecPayload {
-    pub pipeline_exec_id: Uuid,
+    pub pipeline_execs_id: Uuid,
     pub pipeline_node_exec_id: Uuid,
     pub container_type: NodeContainerType,
     pub path: String,

@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
 import {
+	type Pipeline,
 	type TaskNodeConfig,
 	isTaskNodeConfigV0InputBinary,
 	isTaskNodeConfigV0InputSelect,
@@ -20,6 +21,10 @@ export type TaskNodeProps = Node<
 	{
 		name: string;
 		config: TaskNodeConfig;
+		inputs: Array<
+			Pipeline["nodes"][number]["inputs"][number] & { controlled: boolean }
+		>;
+		outputs: Pipeline["nodes"][number]["outputs"];
 	},
 	"task"
 >;
@@ -32,12 +37,14 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 			</CardHeader>
 
 			<CardContent>
-				{data.config.inputs.map(({ name, label, input }) => {
+				{data.config.inputs.map(({ key, label, input }) => {
+					const inputHandle = data.inputs.find((input) => input.key === key);
+
 					return (
-						<div key={name} className="relative [&:not(:first-child)]:mt-2">
+						<div key={key} className="relative [&:not(:first-child)]:mt-2">
 							<Handle
-								key={name}
-								id={name}
+								key={key}
+								id={data.inputs.find((input) => input.key === key)?.id}
 								type="target"
 								position={Position.Left}
 								isConnectable={isConnectable}
@@ -50,7 +57,13 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 							<Label>{label.en}</Label>
 
 							{isTaskNodeConfigV0InputText(input) && (
-								<Input defaultValue={input.text.default} />
+								<Input
+									disabled={inputHandle?.controlled}
+									defaultValue={input.text.default}
+									placeholder={
+										inputHandle?.controlled ? "Will be computed" : ""
+									}
+								/>
 							)}
 
 							{isTaskNodeConfigV0InputSelect(input) && (
@@ -66,14 +79,19 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 
 				<Separator className="my-4" />
 
-				{data.config.outputs.map((output, index) => (
-					// biome-ignore lint/suspicious/noArrayIndexKey: This is a unique identifier
-					<div key={index} className="relative [&:not(:first-child)]:mt-2">
+				{data.config.outputs.map(({ key, label, output }) => (
+					<div
+						key={key}
+						className="relative flex items-center [&:not(:first-child)]:mt-2"
+					>
+						<Label>{label.en}</Label>
+
 						{output === "text" && <TextIcon className="ml-auto" />}
 						{output === "status" && <CheckIcon className="ml-auto" />}
 						{output === "binary" && <ImageIcon className="ml-auto" />}
 
 						<Handle
+							id={data.outputs.find((output) => output.key === key)?.id}
 							type="source"
 							style={{
 								right: "-1.5rem",
