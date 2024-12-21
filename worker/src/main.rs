@@ -101,7 +101,7 @@ async fn main() -> Result<(), async_nats::Error> {
             };
 
             let payload_bytes = match serde_json::to_string(&dtos::PipelineNodeExecResultPayload {
-                pipeline_execs_id: payload.pipeline_execs_id,
+                pipeline_exec_id: payload.pipeline_execs_id,
                 pipeline_node_exec_id: payload.pipeline_node_exec_id,
                 result,
             }) {
