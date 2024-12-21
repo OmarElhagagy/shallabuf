@@ -51,7 +51,7 @@ pub async fn details(
         r#"
         SELECT
             p.id AS pipeline_id, p.name, p.description,
-            pn.id AS node_id, pn.node_id AS node_node_id, pn.node_version, pn.trigger_id, pn.coords,
+            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,
             pc.id AS "connection_id?", pc.from_node_id AS "from_node_id?", pc.to_node_id AS "to_node_id?"
         FROM
             pipelines p
@@ -78,8 +78,8 @@ pub async fn details(
         .filter_map(|row| {
             if seen_nodes.insert(row.node_id) {
                 Some(PipelineNode {
-                    id: row.node_id,
-                    node_id: row.node_node_id,
+                    id: row.pipeline_node_id,
+                    node_id: row.node_id,
                     node_version: row.node_version.clone(),
                     trigger_id: row.trigger_id,
                     coords: row.coords.clone(),

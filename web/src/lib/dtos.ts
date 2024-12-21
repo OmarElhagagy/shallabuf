@@ -2,6 +2,7 @@ export interface Node {
 	id: string;
 	name: string;
 	description?: string;
+	config: TaskNodeConfig;
 }
 
 export interface PipelineParticipant {
@@ -34,3 +35,65 @@ export interface PipelineConnection {
 	from_node_id: string;
 	to_node_id: string;
 }
+
+export enum NodeType {
+	Task = "task",
+	Trigger = "trigger",
+}
+
+export interface TaskNodeConfigV0InputText {
+	text: {
+		default?: string;
+	};
+}
+
+export interface TaskNodeConfigV0InputSelect {
+	select: {
+		options: {
+			value: string;
+			label: {
+				[key: string]: string;
+			};
+		}[];
+		default?: string;
+	};
+}
+
+export type TaskNodeConfigV0Input =
+	| TaskNodeConfigV0InputText
+	| TaskNodeConfigV0InputSelect
+	| "binary";
+
+export const isTaskNodeConfigV0InputText = (
+	input: TaskNodeConfigV0Input,
+): input is TaskNodeConfigV0InputText => {
+	return (input as TaskNodeConfigV0InputText).text !== undefined;
+};
+
+export const isTaskNodeConfigV0InputSelect = (
+	input: TaskNodeConfigV0Input,
+): input is TaskNodeConfigV0InputSelect => {
+	return (input as TaskNodeConfigV0InputSelect).select !== undefined;
+};
+
+export const isTaskNodeConfigV0InputBinary = (
+	input: TaskNodeConfigV0Input,
+): input is "binary" => {
+	return input === "binary";
+};
+
+export interface TaskNodeConfigV0 {
+	version: "v0";
+	inputs: {
+		name: string;
+		input: TaskNodeConfigV0Input;
+		label: {
+			[key: string]: string;
+		};
+		description?: string;
+		required: boolean;
+	}[];
+	outputs: string[];
+}
+
+export type TaskNodeConfig = TaskNodeConfigV0;

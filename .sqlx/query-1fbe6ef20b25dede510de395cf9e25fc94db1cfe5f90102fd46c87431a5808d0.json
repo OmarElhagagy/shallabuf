@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            id, name, description\n        FROM\n            nodes\n        ",
+  "query": "\n        SELECT\n            id, name, description, config\n        FROM\n            nodes\n        ",
   "describe": {
     "columns": [
       {
@@ -17,6 +17,11 @@
         "ordinal": 2,
         "name": "description",
         "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "config",
+        "type_info": "Json"
       }
     ],
     "parameters": {
@@ -25,8 +30,9 @@
     "nullable": [
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "9d5b0db5af6827ec387d491d3e84978fa6b0b7102ed895b774c32519635d55a3"
+  "hash": "1fbe6ef20b25dede510de395cf9e25fc94db1cfe5f90102fd46c87431a5808d0"
 }
