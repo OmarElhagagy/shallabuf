@@ -13,6 +13,8 @@ RUN rm -rf /usr/local/cargo/registry
 # Install dependencies
 RUN apt-get update && apt-get install -y libssl-dev
 
+ENV SQLX_OFFLINE=true
+
 RUN --mount=type=cache,target=/build/target \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \

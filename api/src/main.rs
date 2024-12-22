@@ -1,21 +1,17 @@
-use app_state::{
-    AppState, Broadcast, BroadcastEvent, DatabaseConnection, JetStream, WsClientAction,
-};
+use app_state::{AppState, Broadcast, BroadcastEvent, DatabaseConnection};
 use async_nats::{self, jetstream};
 use axum::{
-    extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
-use db::dtos::PipelineExecPayloadParams;
 use db::seed::seed_database;
 use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tokio::{io, sync::broadcast};
 use tower_http::cors::CorsLayer;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
@@ -94,77 +90,6 @@ async fn pipelines(
     Ok(Json(pipelines))
 }
 
-#[derive(Serialize)]
-struct PipelineTriggerResponse {
-    pipeline_execs_id: Uuid,
-}
-
-async fn trigger_pipeline(
-    Path(id): Path<String>,
-    DatabaseConnection(mut conn): DatabaseConnection,
-    State(stream): State<JetStream>,
-    Json(params): Json<PipelineExecPayloadParams>,
-) -> Result<Json<PipelineTriggerResponse>, StatusCode> {
-    info!("Received request to trigger pipeline with id: {id}");
-    let pipeline_id = Uuid::parse_str(&id).map_err(|_| {
-        warn!("Invalid UUID format for pipeline id: {id}");
-        StatusCode::BAD_REQUEST
-    })?;
-
-    // let pipeline_execs_id = sqlx::query_as(
-    //     r"
-    //     INSERT INTO pipeline_execs (pipeline_id)
-    //     VALUES ($1)
-    //     RETURNING id
-    //     ",
-    //     pipeline_id,
-    // );
-
-    // let pipeline_execs = pipeline_execs::Entity::insert(pipeline_execs::ActiveModel {
-    //     pipeline_id: Set(pipeline_id),
-    //     ..Default::default()
-    // })
-    // .exec(&pool)
-    // .await
-    // .map_err(|error| {
-    //     error!("Database error: {error:?}");
-    //     StatusCode::INTERNAL_SERVER_ERROR
-    // })?;
-
-    // info!(
-    //     "Pipeline execution record created with id: {}",
-    //     pipeline_execs.last_insert_id
-    // );
-
-    // let payload_bytes = serde_json::to_string(&dtos::PipelineExecPayload {
-    //     pipeline_id,
-    //     pipeline_execs_id: pipeline_execs.last_insert_id,
-    //     params,
-    // })
-    // .map_err(|error| {
-    //     error!("Failed to serialize payload: {error:?}");
-    //     StatusCode::INTERNAL_SERVER_ERROR
-    // })?
-    // .into();
-
-    // if let Err(error) = stream.publish("pipeline.exec", payload_bytes).await {
-    //     error!("Failed to publish message to JetStream: {error:?}");
-    // } else {
-    //     debug!(
-    //         "Published message to JetStream for pipeline_execs_id: {}",
-    //         pipeline_execs.last_insert_id
-    //     );
-    // }
-
-    // Ok(Json(PipelineTriggerResponse {
-    //     pipeline_execs_id: pipeline_execs.last_insert_id
-    // }))
-
-    Ok(Json(PipelineTriggerResponse {
-        pipeline_execs_id: Uuid::new_v4(),
-    }))
-}
-
 async fn run_migrations(pool: PgPool) {
     let rust_env = std::env::var("RUST_ENV").unwrap_or("dev".to_string());
 
@@ -227,7 +152,10 @@ async fn main() -> io::Result<()> {
     let pg_pool = PgPoolOptions::new()
         .connect(&database_url)
         .await
-        .expect("Failed to connect to database");
+        .map_err(|error| {
+            error!("Failed to connect to database: {error:?}");
+            io::Error::new(io::ErrorKind::Other, "Failed to connect to database")
+        })?;
 
     run_migrations(pg_pool.clone()).await;
 
@@ -242,7 +170,7 @@ async fn main() -> io::Result<()> {
     let app_state = AppState {
         db: pg_pool,
         redis: redis_connection_manager,
-        jetstream: JetStream(jetstream),
+        jetstream,
         broadcast: Broadcast(tx),
     };
 
@@ -253,7 +181,10 @@ async fn main() -> io::Result<()> {
             "/api/v0/pipelines/:id",
             get(routes::api::v0::pipeline::details),
         )
-        .route("/api/v0/trigger/pipelines/:id", post(trigger_pipeline))
+        .route(
+            "/api/v0/trigger/pipelines/:id",
+            post(routes::api::v0::pipeline::trigger),
+        )
         .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
         .route(
             "/api/v0/pipeline_nodes",

@@ -126,6 +126,9 @@ CREATE TABLE IF NOT EXISTS pipeline_node_connections (
 );
 
 -- Create indexes
+CREATE INDEX IF NOT EXISTS idx_pipeline_triggers_pipeline_id
+    ON pipeline_triggers(pipeline_id);
+
 CREATE INDEX IF NOT EXISTS idx_pipeline_node_connections_to_pipeline_node_input_id
     ON pipeline_node_connections(to_pipeline_node_input_id);
 
@@ -174,18 +177,8 @@ BEFORE UPDATE ON nodes
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER set_updated_at_pipeline_execs
-BEFORE UPDATE ON pipeline_execs
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
-
 CREATE TRIGGER set_updated_at_pipeline_nodes
 BEFORE UPDATE ON pipeline_nodes
-FOR EACH ROW
-EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER set_updated_at_pipeline_node_execs
-BEFORE UPDATE ON pipeline_node_execs
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 

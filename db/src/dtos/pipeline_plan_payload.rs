@@ -3,5 +3,5 @@ use uuid::Uuid;
 
 #[derive(Serialize, Deserialize)]
 pub struct PipelinePlanPayload {
-    pub pipeline_execs_id: Uuid,
+    pub pipeline_exec_id: Uuid,
 }

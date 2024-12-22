@@ -14,6 +14,12 @@ export interface Pipeline {
 	id: string;
 	name: string;
 	description?: string;
+	trigger: {
+		id: string;
+		config: {
+			[key: string]: string;
+		};
+	};
 	nodes: PipelineNode[];
 	connections: PipelineConnection[];
 	participants?: PipelineParticipant[];

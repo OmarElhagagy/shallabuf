@@ -12,7 +12,7 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
-    pub jetstream: JetStream,
+    pub jetstream: async_nats::jetstream::Context,
     pub broadcast: Broadcast,
     pub redis: redis::aio::ConnectionManager,
 }
@@ -41,12 +41,19 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct JetStream(pub async_nats::jetstream::Context);
 
-impl FromRef<AppState> for JetStream {
-    fn from_ref(state: &AppState) -> Self {
-        Self(state.jetstream.0.clone())
+#[async_trait]
+impl<S> FromRequestParts<S> for JetStream
+where
+    AppState: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, String);
+
+    async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let state = AppState::from_ref(state);
+        Ok(Self(state.jetstream.clone()))
     }
 }
 

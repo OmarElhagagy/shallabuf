@@ -36,6 +36,7 @@ import type { WsStoreState } from "~/stores/ws-store";
 import { Dropzone } from "./dropzone";
 import { NodeItem } from "./node-item";
 import { TaskNode } from "./task-node";
+import { TriggerNode } from "./trigger-node";
 
 export interface EditorProps {
 	nodes: Parameters<typeof useNodesState>[0];
@@ -46,6 +47,7 @@ export interface EditorProps {
 
 const nodeTypes: ReactFlowProps["nodeTypes"] = {
 	task: TaskNode,
+	trigger: TriggerNode,
 };
 
 export const Editor = (props: EditorProps) => {

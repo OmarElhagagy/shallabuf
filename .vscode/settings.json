@@ -39,6 +39,7 @@
     "dtos",
     "EXAT",
     "hdel",
+    "healthcheck",
     "hgetall",
     "hset",
     "jarredsumner",

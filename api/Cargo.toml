@@ -21,7 +21,7 @@ async-nats = "^0.38"
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "json", "time", "uuid"] }
-dotenvy = "0.15"
+dotenvy = "^0.15"
 tower-http = { version = "^0.6", features = ["cors"] }
 argon2 = "^0.5"
 redis = { version = "^0.27", features = ["tokio-comp", "connection-manager"] }

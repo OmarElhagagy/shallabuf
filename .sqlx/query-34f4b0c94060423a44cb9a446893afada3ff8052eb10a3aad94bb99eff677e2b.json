@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    UPDATE\n                        pipeline_execs\n                    SET\n                        status = $1,\n                        started_at = NOW()\n                    WHERE\n                        id = $2\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "exec_status",
+            "kind": {
+              "Enum": [
+                "pending",
+                "running",
+                "completed",
+                "failed"
+              ]
+            }
+          }
+        },
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "34f4b0c94060423a44cb9a446893afada3ff8052eb10a3aad94bb99eff677e2b"
+}

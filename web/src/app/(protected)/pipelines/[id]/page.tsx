@@ -85,6 +85,20 @@ export default async function PipelineDetails(props: { params: Params }) {
 		},
 	);
 
+	nodes.push({
+		id: pipeline.trigger.id,
+		position: {
+			x: -154,
+			y: -112,
+		},
+		type: NodeType.Trigger,
+		data: {
+			name: "Trigger",
+			pipelineId: pipeline.id,
+			config: pipeline.trigger.config,
+		},
+	});
+
 	const edges: Parameters<typeof useEdgesState>[0] = pipeline.connections.map(
 		(connection) => ({
 			id: connection.id,
@@ -108,6 +122,19 @@ export default async function PipelineDetails(props: { params: Params }) {
 			selectable: true,
 		}),
 	);
+
+	edges.push({
+		id: pipeline.trigger.id,
+		source: pipeline.trigger.id,
+		target:
+			pipeline.nodes.find((node) => {
+				return node.trigger_id === pipeline.trigger.id;
+			})?.id ?? "",
+		animated: true,
+		deletable: true,
+		focusable: true,
+		selectable: true,
+	});
 
 	return (
 		<div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">

@@ -2,13 +2,15 @@ use std::collections::HashSet;
 
 use axum::{extract::Path, Json};
 use axum_extra::extract::Query;
+use db::dtos::{self, PipelineExecPayloadParams};
 use hyper::StatusCode;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 use uuid::Uuid;
 
 use crate::{
-    app_state::{DatabaseConnection, RedisConnection},
+    app_state::{DatabaseConnection, JetStream, RedisConnection},
     extractors::session::Session,
     utils::internal_error,
 };
@@ -52,11 +54,18 @@ pub struct PipelineParticipant {
 }
 
 #[derive(Debug, Serialize)]
+pub struct Trigger {
+    id: Uuid,
+    config: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Pipeline {
     id: Uuid,
     name: String,
     description: Option<String>,
+    trigger: Trigger,
     nodes: Vec<Node>,
     connections: Vec<PipelineConnection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,13 +108,16 @@ pub async fn details(
         r#"
         SELECT
             p.id AS pipeline_id, p.name, p.description,
-            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,
-            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key as "output_key?",
-            pc.id AS "connection_id?", pc.to_pipeline_node_input_id as "to_pipeline_node_input_id?", pc.from_pipeline_node_output_id as "from_pipeline_node_output_id?"
+            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id AS pipeline_trigger_id, pn.coords,
+            pt.id AS trigger_id, pt.config AS trigger_config,
+            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key AS "output_key?",
+            pc.id AS "connection_id?", pc.to_pipeline_node_input_id AS "to_pipeline_node_input_id?", pc.from_pipeline_node_output_id AS "from_pipeline_node_output_id?"
         FROM
             pipelines p
         LEFT JOIN
             pipeline_nodes pn ON pn.pipeline_id = p.id
+        LEFT JOIN
+            pipeline_triggers pt ON pt.pipeline_id = p.id
         LEFT JOIN
             pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id
         LEFT JOIN
@@ -136,7 +148,7 @@ pub async fn details(
                     id: row.pipeline_node_id,
                     node_id: row.node_id,
                     node_version: row.node_version.clone(),
-                    trigger_id: row.trigger_id,
+                    trigger_id: row.pipeline_trigger_id,
                     coords: row.coords.clone(),
                     inputs: Vec::new(),
                     outputs: Vec::new(),
@@ -237,10 +249,62 @@ pub async fn details(
         id: pipeline[0].pipeline_id,
         name: pipeline[0].name.clone(),
         description: pipeline[0].description.clone(),
+        trigger: Trigger {
+            id: pipeline[0].trigger_id,
+            config: pipeline[0].trigger_config.clone(),
+        },
         nodes,
         connections,
         participants,
     };
 
     Ok(Json(pipeline))
+}
+
+#[derive(Serialize)]
+pub struct PipelineTriggerResponse {
+    pipeline_exec_id: Uuid,
+}
+
+pub async fn trigger(
+    Path(id): Path<Uuid>,
+    DatabaseConnection(mut db): DatabaseConnection,
+    JetStream(jetstream): JetStream,
+    Session(_): Session,
+    Json(params): Json<PipelineExecPayloadParams>,
+) -> Result<Json<PipelineTriggerResponse>, StatusCode> {
+    info!("Received request to trigger pipeline with id: {id}");
+
+    let pipeline_exec = sqlx::query!(
+        r"
+        INSERT INTO pipeline_execs (pipeline_id)
+        VALUES ($1)
+        RETURNING id
+        ",
+        id,
+    )
+    .fetch_one(&mut *db)
+    .await
+    .map_err(internal_error)?;
+
+    info!(
+        "Pipeline execution record created with id: {}",
+        pipeline_exec.id
+    );
+
+    let payload = serde_json::to_string(&dtos::PipelineExecPayload {
+        pipeline_id: id,
+        pipeline_exec_id: pipeline_exec.id,
+        params,
+    })
+    .map_err(internal_error)?;
+
+    jetstream
+        .publish("pipeline.exec", payload.into())
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(PipelineTriggerResponse {
+        pipeline_exec_id: Uuid::new_v4(),
+    }))
 }

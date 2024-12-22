@@ -1,14 +1,10 @@
-use db::{
-    dtos::{self, PipelinePlanPayload},
-    // entities::sea_orm_active_enums::ExecStatus,
-    // ConnectionTrait,
-};
+use db::dtos::{self, ExecStatus, PipelinePlanPayload};
+use dotenvy::dotenv;
 use futures::StreamExt;
-use models::{NodeContainerType, PipelineNodesWithConnections};
+use models::NodeContainerType;
 use petgraph::graph::DiGraph;
 use pipeline_run::PipelineRun;
-use sea_orm::EntityTrait;
-use sea_orm::Statement;
+use sqlx::postgres::PgPoolOptions;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
@@ -32,465 +28,396 @@ impl From<NodeContainerType> for db::dtos::NodeContainerType {
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
 async fn main() -> Result<(), async_nats::Error> {
-    // let filter_layer = EnvFilter::from_default_env();
-    // let fmt_layer = fmt::layer().with_target(false).with_line_number(true);
+    dotenv().ok();
 
-    // tracing_subscriber::registry()
-    //     .with(filter_layer)
-    //     .with(fmt_layer)
-    //     .init();
+    let filter_layer = EnvFilter::from_default_env();
+    let fmt_layer = fmt::layer().with_target(false).with_line_number(true);
 
-    // let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    // let max_connections = std::env::var("MAX_CONNECTIONS")
-    //     .unwrap_or("10".to_string())
-    //     .parse::<u32>()
-    //     .expect("MAX_CONNECTIONS must be a number");
+    tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(fmt_layer)
+        .init();
 
-    // let mut options = ConnectOptions::new(database_url);
-    // options.max_connections(max_connections);
-    // // let db = Arc::new(Database::connect(options).await?);
+    let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
+    let nats_client = async_nats::connect(nats_url)
+        .await
+        .expect("Failed to connect to NATS");
 
-    // let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
-    // let nats_client = async_nats::connect(nats_url)
-    //     .await
-    //     .expect("Failed to connect to NATS");
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let pg_pool = PgPoolOptions::new()
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
 
-    // let runs = Arc::new(RwLock::new(HashMap::<Uuid, PipelineRun>::new()));
+    let runs = Arc::new(RwLock::new(HashMap::<Uuid, PipelineRun>::new()));
 
-    // let nats_client_clone = nats_client.clone();
-    // let runs_clone = Arc::clone(&runs);
-    // // let db_clone = Arc::clone(&db);
-    // let mut pipeline_node_exec_result_subscriber =
-    //     nats_client_clone.subscribe("pipeline.node.result").await?;
+    // --- Pipeline execution ---
+    let nats_client_clone = nats_client.clone();
+    let runs_clone = Arc::clone(&runs);
+    let mut pipeline_execs_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
+    let pg_pool_clone = pg_pool.clone();
 
-    // tokio::spawn(async move {
-    //     // let db = db_clone;
+    tokio::spawn(async move {
+        let pg_pool = pg_pool_clone;
 
-    //     while let Some(message) = pipeline_node_exec_result_subscriber.next().await {
-    //         let payload = match serde_json::from_slice::<dtos::PipelineNodeExecResultPayload>(
-    //             &message.payload,
-    //         ) {
-    //             Ok(payload) => payload,
-    //             Err(error) => {
-    //                 error!("Failed to deserialize message payload: {error:?}");
-    //                 continue;
-    //             }
-    //         };
+        while let Some(message) = pipeline_execs_subscriber.next().await {
+            let payload =
+                match serde_json::from_slice::<dtos::PipelineExecPayload>(&message.payload) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        error!("Failed to deserialize message payload: {error:?}");
+                        continue;
+                    }
+                };
 
-    //         let mut runs = runs_clone.write().await;
+            match sqlx::query!(
+                r#"
+                    UPDATE
+                        pipeline_execs
+                    SET
+                        status = $1,
+                        started_at = NOW()
+                    WHERE
+                        id = $2
+                "#,
+                dtos::ExecStatus::Running as ExecStatus,
+                payload.pipeline_exec_id
+            )
+            .execute(&pg_pool)
+            .await
+            {
+                Ok(_) => {
+                    info!(
+                        "Pipeline execution status updated to 'running', pipeline_execs_id: {}",
+                        payload.pipeline_exec_id
+                    );
+                }
+                Err(error) => {
+                    error!("Failed to update pipeline execution record: {error:?}, pipeline_exec_id: {}", payload.pipeline_exec_id);
+                    continue;
+                }
+            }
 
-    //         let Some(pipeline_run) = runs.get_mut(&payload.pipeline_execs_id) else {
-    //             error!(
-    //                 "Pipeline run not found for ID: {}",
-    //                 payload.pipeline_execs_id
-    //             );
+            let pipeline_nodes = match sqlx::query!(
+                r#"
+                    SELECT
+                        pipeline_nodes.id,
+                        pipeline_nodes.node_version,
+                        nodes.publisher_name,
+                        nodes.name,
+                        nodes.container_type::TEXT AS container_type,
+                        pipeline_node_connections.from_pipeline_node_output_id AS "from_pipeline_node_output_id?"
+                    FROM
+                        pipeline_nodes
+                    LEFT JOIN
+                        nodes ON pipeline_nodes.node_id = nodes.id
+                    LEFT JOIN
+                        pipeline_node_connections
+                        ON pipeline_nodes.id = pipeline_node_connections.to_pipeline_node_input_id
+                        OR pipeline_nodes.id = pipeline_node_connections.from_pipeline_node_output_id
+                    WHERE
+                        pipeline_nodes.pipeline_id = $1;
+                "#,
+                payload.pipeline_id
+            )
+            .fetch_all(&pg_pool)
+            .await {
+                Ok(nodes) => nodes,
+                Err(error) => {
+                    error!("Failed to fetch pipeline nodes: {error:?}");
+                    continue;
+                }
+            };
 
-    //             continue;
-    //         };
+            let mut graph = DiGraph::new();
+            let mut graph_nodes = std::collections::HashMap::new();
 
-    //         match db
-    //             .query_one(Statement::from_sql_and_values(
-    //                 sea_orm::DatabaseBackend::Postgres,
-    //                 r"
-    //                     UPDATE
-    //                         pipeline_node_execs
-    //                     SET
-    //                         status = $1::exec_status,
-    //                         result = $2,
-    //                         finished_at = NOW()
-    //                     WHERE
-    //                         id = $3;
-    //                 ",
-    //                 [
-    //                     ExecStatus::Completed.into(),
-    //                     payload.result.clone().into(),
-    //                     payload.pipeline_node_exec_id.into(),
-    //                 ],
-    //             ))
-    //             .await
-    //         {
-    //             Ok(_) => {}
-    //             Err(error) => {
-    //                 error!("Failed to update pipeline node exec status: {error:?}");
-    //                 continue;
-    //             }
-    //         }
+            for pipeline_node in &pipeline_nodes {
+                let (node_index, _) = *graph_nodes
+                    .entry(pipeline_node.id)
+                    .or_insert_with(|| (graph.add_node(pipeline_node.id), pipeline_node));
 
-    //         pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
+                if let Some(from_pipeline_node_output_id) =
+                    pipeline_node.from_pipeline_node_output_id
+                {
+                    let (child_index, _) = *graph_nodes
+                        .entry(from_pipeline_node_output_id)
+                        .or_insert_with(|| {
+                            (graph.add_node(from_pipeline_node_output_id), pipeline_node)
+                        });
 
-    //         let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
-    //             pipeline_execs_id: payload.pipeline_execs_id,
-    //         }) {
-    //             Ok(payload) => payload.into(),
-    //             Err(error) => {
-    //                 error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
-    //                 continue;
-    //             }
-    //         };
+                    if node_index != child_index {
+                        graph.add_edge(node_index, child_index, ());
+                    }
+                }
+            }
 
-    //         if let Err(error) = nats_client_clone
-    //             .publish("pipeline.plan", payload_bytes)
-    //             .await
-    //         {
-    //             error!("Failed to publish message to JetStream: {error:?}");
-    //         } else {
-    //             info!(
-    //                 "Published message to JetStream for pipeline_execs_id: {}",
-    //                 payload.pipeline_execs_id
-    //             );
-    //         }
-    //     }
-    // });
+            let mut pipeline_node_execs_payloads: HashMap<Uuid, dtos::PipelineNodeExecPayload> =
+                HashMap::new();
 
-    // let nats_client_clone = nats_client.clone();
-    // let runs_clone = Arc::clone(&runs);
-    // // let db_clone = Arc::clone(&db);
-    // let mut pipeline_execs_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
+            match sqlx::query!(
+                r#"
+                    INSERT INTO
+                        pipeline_node_execs (pipeline_execs_id, pipeline_node_id)
+                    SELECT
+                        pipeline_execs_id, pipeline_node_id
+                    FROM
+                        UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_execs_id, pipeline_node_id)
+                    RETURNING
+                        pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id
+                "#,
+                &vec![payload.pipeline_exec_id; graph_nodes.keys().len()] as &[Uuid],
+                &graph_nodes.keys().copied().collect::<Vec<Uuid>>()
+            )
+            .fetch_all(&pg_pool)
+            .await
+            {
+                Ok(result) => {
+                    for row in result {
+                        let Some((_, pipeline_node)) = graph_nodes.get(&row.pipeline_node_id)
+                        else {
+                            error!("Pipeline node not found for ID: {}", row.pipeline_node_id);
+                            continue;
+                        };
 
-    // tokio::spawn(async move {
-    //     let db = db_clone;
+                        let Some(container_type) = pipeline_node.container_type.as_ref() else {
+                            error!(
+                                "Container type not found for pipeline node: {}",
+                                row.pipeline_node_id
+                            );
+                            continue;
+                        };
 
-    //     while let Some(message) = pipeline_execs_subscriber.next().await {
-    //         let payload =
-    //             match serde_json::from_slice::<dtos::PipelineExecPayload>(&message.payload) {
-    //                 Ok(payload) => payload,
-    //                 Err(error) => {
-    //                     error!("Failed to deserialize message payload: {error:?}");
-    //                     continue;
-    //                 }
-    //             };
+                        pipeline_node_execs_payloads.insert(
+                            row.pipeline_node_id,
+                            dtos::PipelineNodeExecPayload {
+                                pipeline_execs_id: payload.pipeline_exec_id,
+                                pipeline_node_exec_id: row.id,
+                                container_type: container_type.into(),
+                                path: format!(
+                                    "{}@{}:{}",
+                                    pipeline_node.publisher_name,
+                                    pipeline_node.name,
+                                    pipeline_node.node_version
+                                ),
+                                params: payload
+                                    .params
+                                    .get(&row.pipeline_node_id)
+                                    .cloned()
+                                    .unwrap_or_default(),
+                            },
+                        );
+                    }
+                }
+                Err(error) => {
+                    error!("Failed to insert pipeline node exec: {error:?}");
+                    continue;
+                }
+            }
 
-    //         match db
-    //             .query_one(Statement::from_sql_and_values(
-    //                 sea_orm::DatabaseBackend::Postgres,
-    //                 r"
-    //                     UPDATE
-    //                         pipeline_execs
-    //                     SET
-    //                         status = $1::exec_status,
-    //                         started_at = NOW()
-    //                     WHERE
-    //                         id = $2;
-    //                 ",
-    //                 [ExecStatus::Running.into(), payload.pipeline_execs_id.into()],
-    //             ))
-    //             .await
-    //         {
-    //             Ok(_) => {
-    //                 info!(
-    //                     "Pipeline execution status updated to 'running', pipeline_execs_id: {}",
-    //                     payload.pipeline_execs_id
-    //                 );
-    //             }
-    //             Err(error) => {
-    //                 error!("Failed to insert pipeline execution record: {error:?}");
-    //                 continue;
-    //             }
-    //         }
+            let pipeline_run = PipelineRun::new(graph, pipeline_node_execs_payloads);
+            let mut runs = runs_clone.write().await;
+            runs.insert(payload.pipeline_exec_id, pipeline_run.clone());
 
-    //         let pipeline_nodes = match pipeline_nodes::Entity::find()
-    //             .from_raw_sql(Statement::from_sql_and_values(
-    //                 sea_orm::DatabaseBackend::Postgres,
-    //                 r"
-    //                     SELECT
-    //                         pipeline_nodes.id,
-    //                         pipeline_nodes.node_version,
-    //                         nodes.publisher_name,
-    //                         nodes.name,
-    //                         nodes.container_type::TEXT AS container_type,
-    //                         pipeline_node_connections.from_pipeline_node_output_id
-    //                     FROM
-    //                         pipeline_nodes
-    //                     LEFT JOIN
-    //                         nodes ON pipeline_nodes.node_id = nodes.id
-    //                     LEFT JOIN
-    //                         pipeline_node_connections
-    //                         ON pipeline_nodes.id = pipeline_node_connections.to_pipeline_node_input_id
-    //                         OR pipeline_nodes.id = pipeline_node_connections.from_pipeline_node_output_id
-    //                     WHERE
-    //                         pipeline_nodes.pipeline_id = $1;
-    //                 ",
-    //                 [payload.pipeline_id.into()],
-    //             ))
-    //             .into_model::<PipelineNodesWithConnections>()
-    //             .all(&*db)
-    //             .await
-    //         {
-    //             Ok(nodes) => nodes,
-    //             Err(error) => {
-    //                 error!("Failed to fetch pipeline nodes: {error:?}");
-    //                 continue;
-    //             }
-    //         };
+            let nats_payload = match serde_json::to_string(&PipelinePlanPayload {
+                pipeline_exec_id: payload.pipeline_exec_id,
+            }) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
+                    continue;
+                }
+            };
 
-    //         let mut graph = DiGraph::new();
-    //         let mut graph_nodes = std::collections::HashMap::new();
+            if let Err(error) = nats_client_clone
+                .publish("pipeline.plan", nats_payload.into())
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                info!(
+                    "Published message to JetStream for pipeline_exec_id: {}",
+                    payload.pipeline_exec_id
+                );
+            }
+        }
+    });
 
-    //         for pipeline_node in &pipeline_nodes {
-    //             let (node_index, _) = *graph_nodes
-    //                 .entry(pipeline_node.id)
-    //                 .or_insert_with(|| (graph.add_node(pipeline_node.id), pipeline_node));
+    // --- Pipeline planning ---
+    let nats_client_clone = nats_client.clone();
+    let runs_clone = Arc::clone(&runs);
+    let mut pipeline_plan_subscriber = nats_client_clone.subscribe("pipeline.plan").await?;
+    let pg_pool_clone = pg_pool.clone();
 
-    //             if let Some(from_pipeline_node_output_id) = pipeline_node.from_pipeline_node_output_id {
-    //                 let (child_index, _) = *graph_nodes
-    //                     .entry(from_pipeline_node_output_id)
-    //                     .or_insert_with(|| (graph.add_node(from_pipeline_node_output_id), pipeline_node));
+    tokio::spawn(async move {
+        let pg_pool = pg_pool_clone;
 
-    //                 if node_index != child_index {
-    //                     graph.add_edge(node_index, child_index, ());
-    //                 }
-    //             }
-    //         }
+        while let Some(message) = pipeline_plan_subscriber.next().await {
+            let payload =
+                match serde_json::from_slice::<dtos::PipelinePlanPayload>(&message.payload) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        error!("Failed to deserialize message payload: {error:?}");
+                        continue;
+                    }
+                };
 
-    //         let mut pipeline_node_execs_payloads: HashMap<Uuid, dtos::PipelineNodeExecPayload> =
-    //             HashMap::new();
+            let runs = runs_clone.read().await;
 
-    //         // Because sea-orm doesn't support RETURNING the inserted ids (plural) from INSERT INTO stmt, we need to use a raw SQL
-    //         match db
-    //             .query_all(Statement::from_sql_and_values(
-    //                 sea_orm::DatabaseBackend::Postgres,
-    //                 format!(
-    //                     r"
-    //                         INSERT INTO
-    //                             pipeline_node_execs (pipeline_execs_id, pipeline_node_id)
-    //                         VALUES
-    //                             {}
-    //                         RETURNING
-    //                             pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id;
-    //                     ",
-    //                     (1..=graph_nodes.keys().len())
-    //                         .map(|i| format!("(${}, ${})", i + i - 1, i + i))
-    //                         .collect::<Vec<_>>()
-    //                         .join(", "),
-    //                 ),
-    //                 graph_nodes
-    //                     .keys()
-    //                     .flat_map(|pipeline_node_id| {
-    //                         [payload.pipeline_execs_id.into(), (*pipeline_node_id).into()]
-    //                     })
-    //                     .collect::<Vec<_>>(),
-    //             ))
-    //             .await
-    //         {
-    //             Ok(result) => {
-    //                 for row in result {
-    //                     let pipeline_node_exec_id = match row.try_get_by_index(0) {
-    //                         Ok(pipeline_node_exec_id) => pipeline_node_exec_id,
-    //                         Err(error) => {
-    //                             error!("Failed to get pipeline_node_execs_id: {error:?}");
-    //                             continue;
-    //                         }
-    //                     };
+            let Some(pipeline_run) = runs.get(&payload.pipeline_exec_id) else {
+                error!(
+                    "Pipeline run not found for ID: {}",
+                    payload.pipeline_exec_id
+                );
 
-    //                     let pipeline_node_id = match row.try_get_by_index(1) {
-    //                         Ok(id) => id,
-    //                         Err(error) => {
-    //                             error!("Failed to get pipeline_node_id: {error:?}");
-    //                             continue;
-    //                         }
-    //                     };
+                continue;
+            };
 
-    //                     let Some((_, pipeline_node)) = graph_nodes.get(&pipeline_node_id) else {
-    //                         error!("Pipeline node not found for ID: {pipeline_node_id}");
-    //                         continue;
-    //                     };
+            let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
 
-    //                     let Some(ref container_type_str) = pipeline_node.container_type else {
-    //                         error!(
-    //                             "Container type not found for pipeline node: {pipeline_node_id}"
-    //                         );
-    //                         continue;
-    //                     };
+            if nodes_to_be_executed.is_empty() {
+                info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);
 
-    //                     // let container_type = match container_type_str.as_str() {
-    //                     //     "wasm" => dtos::NodeContainerType::Wasm,
-    //                     //     "docker" => dtos::NodeContainerType::Docker,
-    //                     //     _ => {
-    //                     //         error!("Invalid container type: {}", container_type_str);
-    //                     //         continue;
-    //                     //     }
-    //                     // };
+                match sqlx::query!(
+                    r#"
+                        UPDATE
+                            pipeline_execs
+                        SET
+                            status = $1,
+                            finished_at = NOW()
+                        WHERE
+                            id = $2;
+                    "#,
+                    dtos::ExecStatus::Completed as ExecStatus,
+                    payload.pipeline_exec_id
+                )
+                .execute(&pg_pool)
+                .await
+                {
+                    Ok(_) => {
+                        info!("Pipeline execution status updated to 'completed', pipeline_execs_id: {}", payload.pipeline_exec_id);
+                    }
+                    Err(error) => {
+                        error!(
+                            "Failed to update pipeline execution status, error {error:?}, pipeline_exec_id: {}",
+                            payload.pipeline_exec_id
+                        );
+                    }
+                }
 
-    //                     // pipeline_node_execs_payloads.insert(
-    //                     //     pipeline_node_id,
-    //                     //     dtos::PipelineNodeExecPayload {
-    //                     //         pipeline_execs_id: payload.pipeline_execs_id,
-    //                     //         pipeline_node_exec_id,
-    //                     //         container_type,
-    //                     //         path: format!(
-    //                     //             "{}@{}:{}",
-    //                     //             pipeline_node.publisher_name,
-    //                     //             pipeline_node.name,
-    //                     //             pipeline_node.node_version
-    //                     //         ),
-    //                     //         params: payload
-    //                     //             .params
-    //                     //             .get(&pipeline_node_id)
-    //                     //             .cloned()
-    //                     //             .unwrap_or_default(),
-    //                     //     },
-    //                     // );
-    //                 }
-    //             }
-    //             Err(error) => {
-    //                 error!("Failed to insert pipeline node exec: {error:?}");
-    //                 continue;
-    //             }
-    //         };
+                continue;
+            }
 
-    //         let pipeline_run = PipelineRun::new(graph, pipeline_node_execs_payloads);
-    //         let mut runs = runs_clone.write().await;
-    //         runs.insert(payload.pipeline_execs_id, pipeline_run.clone());
+            for payload in nodes_to_be_executed {
+                info!(
+                    "Publishing message to JetStream for pipeline_node_exec_id: {}",
+                    payload.pipeline_node_exec_id
+                );
 
-    //         let payload_bytes = match serde_json::to_string(&PipelinePlanPayload {
-    //             pipeline_execs_id: payload.pipeline_execs_id,
-    //         }) {
-    //             Ok(payload) => payload.into(),
-    //             Err(error) => {
-    //                 error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
-    //                 continue;
-    //             }
-    //         };
+                let nats_payload = match serde_json::to_string(&payload) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        error!("Failed to serialize payload: {error:?}");
+                        continue;
+                    }
+                };
 
-    //         if let Err(error) = nats_client_clone
-    //             .publish("pipeline.plan", payload_bytes)
-    //             .await
-    //         {
-    //             error!("Failed to publish message to JetStream: {error:?}");
-    //         } else {
-    //             info!(
-    //                 "Published message to JetStream for pipeline_execs_id: {}",
-    //                 payload.pipeline_execs_id
-    //             );
-    //         }
-    //     }
-    // });
+                if let Err(error) = nats_client_clone
+                    .publish("pipeline.node.exec", nats_payload.into())
+                    .await
+                {
+                    error!("Failed to publish message to JetStream: {error:?}");
+                } else {
+                    info!(
+                        "Published message to JetStream for pipeline_node_exec_id: {}",
+                        payload.pipeline_node_exec_id
+                    );
+                }
+            }
+        }
+    });
 
-    // let nats_client_clone = nats_client.clone();
-    // let runs_clone = Arc::clone(&runs);
-    // // let db_clone = Arc::clone(&db);
-    // let mut pipeline_plan_subscriber = nats_client_clone.subscribe("pipeline.plan").await?;
+    let nats_client_clone = nats_client.clone();
+    let runs_clone = Arc::clone(&runs);
+    let mut pipeline_node_exec_result_subscriber =
+        nats_client_clone.subscribe("pipeline.node.result").await?;
+    let pg_pool_clone = pg_pool.clone();
 
-    // tokio::spawn(async move {
-    //     let db = db_clone;
+    tokio::spawn(async move {
+        let pg_pool = pg_pool_clone;
 
-    //     while let Some(message) = pipeline_plan_subscriber.next().await {
-    //         let payload =
-    //             match serde_json::from_slice::<dtos::PipelinePlanPayload>(&message.payload) {
-    //                 Ok(payload) => payload,
-    //                 Err(error) => {
-    //                     error!("Failed to deserialize message payload: {error:?}");
-    //                     continue;
-    //                 }
-    //             };
+        while let Some(message) = pipeline_node_exec_result_subscriber.next().await {
+            let payload = match serde_json::from_slice::<dtos::PipelineNodeExecResultPayload>(
+                &message.payload,
+            ) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    error!("Failed to deserialize message payload: {error:?}");
+                    continue;
+                }
+            };
 
-    //         let runs = runs_clone.read().await;
+            let mut runs = runs_clone.write().await;
 
-    //         let Some(pipeline_run) = runs.get(&payload.pipeline_execs_id) else {
-    //             error!(
-    //                 "Pipeline run not found for ID: {}",
-    //                 payload.pipeline_execs_id
-    //             );
+            let Some(pipeline_run) = runs.get_mut(&payload.pipeline_exec_id) else {
+                error!(
+                    "Pipeline run not found for ID: {}",
+                    payload.pipeline_exec_id
+                );
 
-    //             continue;
-    //         };
+                continue;
+            };
 
-    //         let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
+            match sqlx::query!(
+                r#"
+                    UPDATE
+                        pipeline_node_execs
+                    SET
+                        status = $1,
+                        result = $2,
+                        finished_at = NOW()
+                    WHERE
+                        id = $3;
+                "#,
+                dtos::ExecStatus::Completed as ExecStatus,
+                payload.result,
+                payload.pipeline_node_exec_id
+            )
+            .execute(&pg_pool)
+            .await
+            {
+                Ok(_) => {}
+                Err(error) => {
+                    error!("Failed to update pipeline node exec status: {error:?}");
+                    continue;
+                }
+            }
 
-    //         if nodes_to_be_executed.is_empty() {
-    //             info!("Pipeline run finished for ID: {}", payload.pipeline_execs_id);
+            pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
 
-    //             match db
-    //                 .query_one(Statement::from_sql_and_values(
-    //                     sea_orm::DatabaseBackend::Postgres,
-    //                     r"
-    //                         UPDATE
-    //                             pipeline_execs
-    //                         SET
-    //                             status = $1::exec_status,
-    //                             finished_at = NOW()
-    //                         WHERE
-    //                             id = $2;
-    //                     ",
-    //                     [
-    //                         ExecStatus::Completed.into(),
-    //                         payload.pipeline_execs_id.into(),
-    //                     ],
-    //                 ))
-    //                 .await
-    //             {
-    //                 Ok(_) => {
-    //                     info!("Pipeline execution status updated to 'completed', pipeline_execs_id: {}", payload.pipeline_execs_id);
-    //                 }
-    //                 Err(error) => {
-    //                     error!(
-    //                         "Failed to update pipeline execution status, error {error:?}, pipeline_execs_id: {}",
-    //                         payload.pipeline_execs_id
-    //                     );
-    //                 }
-    //             }
+            let nats_payload = match serde_json::to_string(&PipelinePlanPayload {
+                pipeline_exec_id: payload.pipeline_exec_id,
+            }) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    error!("Failed to serialize payload for PipelinePlanPayload: {error:?}");
+                    continue;
+                }
+            };
 
-    //             continue;
-    //         }
-
-    //         match db
-    //             .query_all(Statement::from_sql_and_values(
-    //                 sea_orm::DatabaseBackend::Postgres,
-    //                 r"
-    //                     UPDATE
-    //                         pipeline_node_execs
-    //                     SET
-    //                         status = $1::exec_status,
-    //                         started_at = NOW()
-    //                     WHERE
-    //                         id = ANY($2);
-    //                 ",
-    //                 [
-    //                     ExecStatus::Running.into(),
-    //                     nodes_to_be_executed
-    //                         .iter()
-    //                         .map(|payload| payload.pipeline_node_exec_id)
-    //                         .collect::<Vec<_>>()
-    //                         .into(),
-    //                 ],
-    //             ))
-    //             .await
-    //         {
-    //             Ok(_) => {}
-    //             Err(error) => {
-    //                 error!("Failed to update pipeline nodes exec status: {error:?}");
-    //                 continue;
-    //             }
-    //         }
-
-    //         for payload in nodes_to_be_executed {
-    //             info!(
-    //                 "Publishing message to JetStream for pipeline_node_exec_id: {}",
-    //                 payload.pipeline_node_exec_id
-    //             );
-
-    //             let payload_bytes = match serde_json::to_string(&payload) {
-    //                 Ok(payload) => payload.into(),
-    //                 Err(error) => {
-    //                     error!("Failed to serialize payload: {error:?}");
-    //                     continue;
-    //                 }
-    //             };
-
-    //             if let Err(error) = nats_client_clone
-    //                 .publish("pipeline.node.exec", payload_bytes)
-    //                 .await
-    //             {
-    //                 error!("Failed to publish message to JetStream: {error:?}");
-    //             } else {
-    //                 info!(
-    //                     "Published message to JetStream for pipeline_node_exec_id: {}",
-    //                     payload.pipeline_node_exec_id
-    //                 );
-    //             }
-    //         }
-    //     }
-    // });
+            if let Err(error) = nats_client_clone
+                .publish("pipeline.plan", nats_payload.into())
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                info!(
+                    "Published message to JetStream for pipeline_exec_id: {}",
+                    payload.pipeline_exec_id
+                );
+            }
+        }
+    });
 
     ctrl_c().await?;
 

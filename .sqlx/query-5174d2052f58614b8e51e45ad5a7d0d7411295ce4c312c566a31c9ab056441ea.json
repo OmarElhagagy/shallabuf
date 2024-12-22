@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            p.id AS pipeline_id, p.name, p.description,\n            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,\n            pni.id AS \"input_id?\", pni.key as \"input_key?\", pno.id AS \"output_id?\", pno.key as \"output_key?\",\n            pc.id AS \"connection_id?\", pc.to_pipeline_node_input_id as \"to_pipeline_node_input_id?\", pc.from_pipeline_node_output_id as \"from_pipeline_node_output_id?\"\n        FROM\n            pipelines p\n        LEFT JOIN\n            pipeline_nodes pn ON pn.pipeline_id = p.id\n        LEFT JOIN\n            pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_outputs pno ON pno.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_connections pc ON pc.to_pipeline_node_input_id = pni.id OR pc.from_pipeline_node_output_id = pno.id\n        WHERE\n            p.id = $1\n        ",
+  "query": "\n        SELECT\n            p.id AS pipeline_id, p.name, p.description,\n            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id AS pipeline_trigger_id, pn.coords,\n            pt.id AS trigger_id, pt.config AS trigger_config,\n            pni.id AS \"input_id?\", pni.key as \"input_key?\", pno.id AS \"output_id?\", pno.key AS \"output_key?\",\n            pc.id AS \"connection_id?\", pc.to_pipeline_node_input_id AS \"to_pipeline_node_input_id?\", pc.from_pipeline_node_output_id AS \"from_pipeline_node_output_id?\"\n        FROM\n            pipelines p\n        LEFT JOIN\n            pipeline_nodes pn ON pn.pipeline_id = p.id\n        LEFT JOIN\n            pipeline_triggers pt ON pt.pipeline_id = p.id\n        LEFT JOIN\n            pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_outputs pno ON pno.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_connections pc ON pc.to_pipeline_node_input_id = pni.id OR pc.from_pipeline_node_output_id = pno.id\n        WHERE\n            p.id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -35,7 +35,7 @@
       },
       {
         "ordinal": 6,
-        "name": "trigger_id",
+        "name": "pipeline_trigger_id",
         "type_info": "Uuid"
       },
       {
@@ -45,36 +45,46 @@
       },
       {
         "ordinal": 8,
-        "name": "input_id?",
+        "name": "trigger_id",
         "type_info": "Uuid"
       },
       {
         "ordinal": 9,
-        "name": "input_key?",
-        "type_info": "Varchar"
+        "name": "trigger_config",
+        "type_info": "Json"
       },
       {
         "ordinal": 10,
-        "name": "output_id?",
+        "name": "input_id?",
         "type_info": "Uuid"
       },
       {
         "ordinal": 11,
-        "name": "output_key?",
+        "name": "input_key?",
         "type_info": "Varchar"
       },
       {
         "ordinal": 12,
-        "name": "connection_id?",
+        "name": "output_id?",
         "type_info": "Uuid"
       },
       {
         "ordinal": 13,
+        "name": "output_key?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 14,
+        "name": "connection_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 15,
         "name": "to_pipeline_node_input_id?",
         "type_info": "Uuid"
       },
       {
-        "ordinal": 14,
+        "ordinal": 16,
         "name": "from_pipeline_node_output_id?",
         "type_info": "Uuid"
       }
@@ -99,8 +109,10 @@
       false,
       false,
       false,
+      false,
+      false,
       false
     ]
   },
-  "hash": "7476eb41ecd35c830064b763c36af2abc1fd7145a6c3482fda515bc23ac15bd8"
+  "hash": "5174d2052f58614b8e51e45ad5a7d0d7411295ce4c312c566a31c9ab056441ea"
 }

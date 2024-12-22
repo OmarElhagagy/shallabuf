@@ -6,3 +6,13 @@ pub enum NodeContainerType {
     Docker,
     Wasm,
 }
+
+impl From<&std::string::String> for NodeContainerType {
+    fn from(s: &std::string::String) -> Self {
+        match s.as_str() {
+            "docker" => NodeContainerType::Docker,
+            "wasm" => NodeContainerType::Wasm,
+            _ => panic!("Invalid node container type"),
+        }
+    }
+}
