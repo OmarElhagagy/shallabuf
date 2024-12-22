@@ -7,8 +7,12 @@ edition = "2021"
 tokio = { version = "1", features = ["full"] }
 serde_json = "^1"
 async-nats = "^0.38"
+dotenvy = "^0.15"
 futures = "^0.3"
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
-wasmtime = "^27"
-db = { path = "../db" }
+wasmtime = "^28"
+aws-sdk-s3 = { version = "^1.66", features = ["behavior-version-latest"] }
+sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "json", "time", "uuid"] }
+serde = { version = "^1", features = ["derive"] }
+uuid = { version = "^1", features = ["v4", "serde"] }

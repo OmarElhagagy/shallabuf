@@ -1,4 +1,6 @@
 pub mod dtos;
+
+#[cfg(feature = "seed")]
 pub mod seed;
 
 use sqlx::migrate::Migrator;

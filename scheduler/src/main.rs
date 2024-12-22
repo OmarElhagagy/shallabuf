@@ -1,7 +1,6 @@
 use db::dtos::{self, ExecStatus, PipelinePlanPayload};
 use dotenvy::dotenv;
 use futures::StreamExt;
-use models::NodeContainerType;
 use petgraph::graph::DiGraph;
 use pipeline_run::PipelineRun;
 use sqlx::postgres::PgPoolOptions;
@@ -13,17 +12,7 @@ use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
-mod models;
 mod pipeline_run;
-
-impl From<NodeContainerType> for db::dtos::NodeContainerType {
-    fn from(container_type: NodeContainerType) -> db::dtos::NodeContainerType {
-        match container_type {
-            NodeContainerType::Wasm => db::dtos::NodeContainerType::Wasm,
-            NodeContainerType::Docker => db::dtos::NodeContainerType::Docker,
-        }
-    }
-}
 
 #[tokio::main]
 #[allow(clippy::too_many_lines)]
@@ -337,6 +326,7 @@ async fn main() -> Result<(), async_nats::Error> {
         }
     });
 
+    // --- Pipeline node execution ---
     let nats_client_clone = nats_client.clone();
     let runs_clone = Arc::clone(&runs);
     let mut pipeline_node_exec_result_subscriber =

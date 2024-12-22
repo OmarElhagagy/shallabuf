@@ -25,4 +25,4 @@ dotenvy = "^0.15"
 tower-http = { version = "^0.6", features = ["cors"] }
 argon2 = "^0.5"
 redis = { version = "^0.27", features = ["tokio-comp", "connection-manager"] }
-db = { path = "../db" }
+db = { path = "../db", features = ["seed"] }

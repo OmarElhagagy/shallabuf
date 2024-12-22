@@ -15,3 +15,7 @@ serde_json = "^1"
 anyhow = "^1"
 argon2 = "^0.5"
 sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "json", "time", "uuid"] }
+
+[features]
+default = []
+seed = []

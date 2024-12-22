@@ -13,6 +13,9 @@ RUN rm -rf /usr/local/cargo/registry
 # Install dependencies
 RUN apt-get update && apt-get install -y libssl-dev
 
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
+RUN update-ca-certificates
+
 ENV SQLX_OFFLINE=true
 
 RUN --mount=type=cache,target=/build/target \
@@ -30,6 +33,9 @@ WORKDIR /app
 
 # Install OpenSSL libraries
 RUN apt-get update && apt-get install -y libssl3
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
+RUN update-ca-certificates
 
 # Copy the main binary
 COPY --from=build /build/main ./
