@@ -11,7 +11,7 @@ COPY . .
 RUN rm -rf /usr/local/cargo/registry
 
 # Install dependencies
-RUN apt-get update && apt-get install -y libssl-dev
+RUN apt-get update && apt-get install -y libssl-dev pkg-config
 
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN update-ca-certificates
@@ -22,8 +22,8 @@ RUN --mount=type=cache,target=/build/target \
     --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     set -eux; \
-    cargo build --bin $pkg --release; \
-    objcopy --compress-debug-sections target/release/$pkg ./main
+    cargo build --bin $pkg; \
+    objcopy --compress-debug-sections target/debug/$pkg ./main
 
 ################################################################################
 

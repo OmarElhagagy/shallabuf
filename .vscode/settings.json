@@ -34,6 +34,7 @@
     "chrono",
     "clsx",
     "cust",
+    "dall",
     "devel",
     "dotenv",
     "dotenvy",
@@ -55,6 +56,7 @@
     "pino",
     "plpgsql",
     "Ratelimit",
+    "reqwest",
     "sadd",
     "serde",
     "Shadcn",
@@ -71,6 +73,7 @@
     "Turborepo",
     "typecheck",
     "UPSTASH",
+    "wasi",
     "wasmtime",
     "xyflow"
   ],

@@ -303,6 +303,29 @@ async fn main() -> Result<(), async_nats::Error> {
                     payload.pipeline_node_exec_id
                 );
 
+                match sqlx::query!(
+                    r#"
+                        UPDATE
+                            pipeline_node_execs
+                        SET
+                            status = $1,
+                            started_at = NOW()
+                        WHERE
+                            id = $2;
+                    "#,
+                    dtos::ExecStatus::Running as ExecStatus,
+                    payload.pipeline_node_exec_id
+                )
+                .execute(&pg_pool)
+                .await
+                {
+                    Ok(_) => {}
+                    Err(error) => {
+                        error!("Failed to update pipeline node exec status: {error:?}");
+                        continue;
+                    }
+                }
+
                 let nats_payload = match serde_json::to_string(&payload) {
                     Ok(payload) => payload,
                     Err(error) => {
@@ -326,7 +349,7 @@ async fn main() -> Result<(), async_nats::Error> {
         }
     });
 
-    // --- Pipeline node execution ---
+    // --- Pipeline node execution result ---
     let nats_client_clone = nats_client.clone();
     let runs_clone = Arc::clone(&runs);
     let mut pipeline_node_exec_result_subscriber =

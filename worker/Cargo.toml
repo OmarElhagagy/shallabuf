@@ -12,6 +12,7 @@ futures = "^0.3"
 tracing = "^0.1"
 tracing-subscriber = { version = "^0.3", features = ["env-filter"] }
 wasmtime = "^28"
+wasmtime-wasi = "^28"
 aws-sdk-s3 = { version = "^1.66", features = ["behavior-version-latest"] }
 sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "json", "time", "uuid"] }
 serde = { version = "^1", features = ["derive"] }

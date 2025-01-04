@@ -5,7 +5,8 @@ use tokio::signal::ctrl_c;
 use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use uuid::Uuid;
-use wasmtime::{Caller, Engine, Linker, Module, Store};
+use wasmtime::{Caller, Config, Engine, Linker, Module, Store};
+use wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PipelineNodeExecPayload {
@@ -91,12 +92,48 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            let engine = Engine::default();
+            let config = Config::new();
+            // config.async_support(true);
+
+            let engine = match Engine::new(&config) {
+                Ok(engine) => engine,
+                Err(error) => {
+                    error!("Failed to create engine: {error}");
+                    continue;
+                }
+            };
+
+            let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
+            match wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |t| t) {
+                Ok(()) => {}
+                Err(error) => {
+                    error!("Failed to add WASI to linker: {error}");
+                    continue;
+                }
+            };
+
+            match linker.func_wrap(
+                "env",
+                "host_func",
+                |_caller: Caller<'_, WasiP1Ctx>, param: i32| {
+                    debug!("Got {param} from WebAssembly");
+                    Ok(param)
+                },
+            ) {
+                Ok(_) => {}
+                Err(error) => {
+                    error!("Failed to link host function: {error}");
+                    continue;
+                }
+            }
+
+            let wasi = WasiCtxBuilder::new().build_p1();
+            let mut store = Store::new(&engine, wasi);
 
             let s3_object = match s3_client
                 .get_object()
                 .bucket("builtins")
-                .key("builtins.wasm")
+                .key("echo.wasm")
                 .send()
                 .await
             {
@@ -124,43 +161,29 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            let mut linker = Linker::new(&engine);
-
-            match linker.func_wrap(
-                "host",
-                "host_func",
-                |caller: Caller<'_, u32>, param: i32| {
-                    debug!("Got {param} from WebAssembly");
-                    debug!("my host state is: {}", caller.data());
-                    Ok(param)
-                },
-            ) {
+            match linker.module(&mut store, "", &module) {
                 Ok(_) => {}
                 Err(error) => {
-                    error!("Failed to link host function: {error}");
-                    continue;
-                }
-            }
-
-            let mut store = Store::new(&engine, 4);
-
-            let instance = match linker.instantiate(&mut store, &module) {
-                Ok(instance) => instance,
-                Err(error) => {
-                    error!("Failed to instantiate module: {error}");
+                    error!("Failed to link module: {error}");
                     continue;
                 }
             };
 
-            let hello = match instance.get_typed_func::<(), i32>(&mut store, "hello") {
-                Ok(hello) => hello,
+            let start_fn = match match linker.get_default(&mut store, "") {
+                Ok(start_fn) => start_fn.typed::<(), ()>(&store),
+                Err(error) => {
+                    error!("Failed to get default function: {error}");
+                    continue;
+                }
+            } {
+                Ok(start_fn) => start_fn,
                 Err(error) => {
                     error!("Failed to get typed function: {error}");
                     continue;
                 }
             };
 
-            let result = match match hello.call(&mut store, ()) {
+            let result = match match start_fn.call(&mut store, ()) {
                 Ok(wasm_response) => serde_json::to_value(wasm_response),
                 Err(error) => serde_json::to_value(error.to_string()),
             } {

@@ -1,13 +1,9 @@
-#[no_mangle]
-pub extern "C" fn host_func(param: i32) -> i32 {
-    param
-}
-
-#[no_mangle]
-pub extern "C" fn hello() -> i32 {
-    host_func(3)
+extern "C" {
+    fn host_func(param: i32) -> i32;
 }
 
 fn main() {
-    println!("{}", hello());
+    unsafe {
+        let _ = host_func(42);
+    }
 }

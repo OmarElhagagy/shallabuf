@@ -22,7 +22,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 
 	try {
 		const data = await fetch(
-			`http://192.168.0.2:8000/api/v0/pipelines/${params.id}?withParticipants=includeMyself`,
+			`http://localhost:8000/api/v0/pipelines/${params.id}?withParticipants=includeMyself`,
 			{
 				headers: {
 					Accept: "application/json",
@@ -39,7 +39,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 	}
 
 	try {
-		const data = await fetch("http://192.168.0.2:8000/api/v0/nodes", {
+		const data = await fetch("http://localhost:8000/api/v0/nodes", {
 			headers: {
 				Accept: "application/json",
 				"Content-Type": "application/json",

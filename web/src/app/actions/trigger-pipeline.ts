@@ -5,7 +5,7 @@ export async function triggerPipelineAction(pipelineId: string) {
 	const sessionToken = await getSessionToken();
 
 	const response = await fetch(
-		`http://192.168.0.2:8000/api/v0/trigger/pipelines/${pipelineId}`,
+		`http://localhost:8000/api/v0/trigger/pipelines/${pipelineId}`,
 		{
 			method: "POST",
 			headers: {

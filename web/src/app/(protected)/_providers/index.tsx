@@ -12,7 +12,7 @@ export const Providers = ({ session_token, children }: ProvidersProps) => {
 	const [connect] = useWsStore(useShallow((state) => [state.connect]));
 
 	useEffect(() => {
-		return connect("ws://192.168.0.2:8000/api/v0/ws", session_token);
+		return connect("ws://localhost:8000/api/v0/ws", session_token);
 	}, [connect, session_token]);
 
 	return <>{children}</>;

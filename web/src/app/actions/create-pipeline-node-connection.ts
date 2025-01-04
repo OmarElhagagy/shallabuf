@@ -9,7 +9,7 @@ export async function createPipelineNodeConnectionAction(
 	params: CreatePipelineNodeConnectionParams,
 ) {
 	const response = await fetch(
-		"http://192.168.0.2:8000/api/v0/pipeline_node_connections",
+		"http://localhost:8000/api/v0/pipeline_node_connections",
 		{
 			method: "POST",
 			headers: {

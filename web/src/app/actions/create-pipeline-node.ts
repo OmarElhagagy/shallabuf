@@ -10,16 +10,13 @@ export interface CreatePipelineNodeParams {
 export async function createPipelineNodeAction(
 	params: CreatePipelineNodeParams,
 ) {
-	const response = await fetch(
-		"http://192.168.0.2:8000/api/v0/pipeline_nodes",
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(params),
+	const response = await fetch("http://localhost:8000/api/v0/pipeline_nodes", {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
 		},
-	);
+		body: JSON.stringify(params),
+	});
 
 	if (!response.ok) {
 		throw new Error(

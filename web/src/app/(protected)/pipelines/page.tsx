@@ -5,7 +5,7 @@ interface Pipeline {
 }
 
 export default async function Home() {
-	const data = await fetch("http://192.168.0.2:8000/api/v0/pipelines");
+	const data = await fetch("http://localhost:8000/api/v0/pipelines");
 	const pipelines: Pipeline[] = await data.json();
 
 	return (

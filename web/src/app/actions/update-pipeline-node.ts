@@ -10,7 +10,7 @@ export async function updatePipelineNodeAction({
 	coords,
 }: UpdatePipelineNodeParams) {
 	const response = await fetch(
-		`http://192.168.0.2:8000/api/v0/pipeline_nodes/${id}`,
+		`http://localhost:8000/api/v0/pipeline_nodes/${id}`,
 		{
 			method: "POST",
 			headers: {
