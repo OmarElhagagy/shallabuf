@@ -17,3 +17,5 @@ aws-sdk-s3 = { version = "^1.66", features = ["behavior-version-latest"] }
 sqlx = { version = "^0.8", features = ["postgres", "runtime-tokio-native-tls", "macros", "json", "time", "uuid"] }
 serde = { version = "^1", features = ["derive"] }
 uuid = { version = "^1", features = ["v4", "serde"] }
+
+builtins = { path = "../builtins" }

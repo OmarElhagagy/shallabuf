@@ -1,11 +1,12 @@
 use dotenvy::dotenv;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::ffi::{c_char, CStr, CString};
 use tokio::signal::ctrl_c;
 use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use uuid::Uuid;
-use wasmtime::{Caller, Config, Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder};
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -92,8 +93,8 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            let config = Config::new();
-            // config.async_support(true);
+            let mut config = Config::new();
+            config.async_support(true);
 
             let engine = match Engine::new(&config) {
                 Ok(engine) => engine,
@@ -104,7 +105,7 @@ async fn main() -> Result<(), async_nats::Error> {
             };
 
             let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
-            match wasmtime_wasi::preview1::add_to_linker_sync(&mut linker, |t| t) {
+            match wasmtime_wasi::preview1::add_to_linker_async(&mut linker, |t| t) {
                 Ok(()) => {}
                 Err(error) => {
                     error!("Failed to add WASI to linker: {error}");
@@ -112,22 +113,7 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            match linker.func_wrap(
-                "env",
-                "host_func",
-                |_caller: Caller<'_, WasiP1Ctx>, param: i32| {
-                    debug!("Got {param} from WebAssembly");
-                    Ok(param)
-                },
-            ) {
-                Ok(_) => {}
-                Err(error) => {
-                    error!("Failed to link host function: {error}");
-                    continue;
-                }
-            }
-
-            let wasi = WasiCtxBuilder::new().build_p1();
+            let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
             let mut store = Store::new(&engine, wasi);
 
             let s3_object = match s3_client
@@ -161,35 +147,98 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            match linker.module(&mut store, "", &module) {
-                Ok(_) => {}
+            let instance = match linker.instantiate_async(&mut store, &module).await {
+                Ok(instance) => instance,
                 Err(error) => {
-                    error!("Failed to link module: {error}");
+                    error!("Failed to instantiate module asynchronously: {error}");
                     continue;
                 }
             };
 
-            let start_fn = match match linker.get_default(&mut store, "") {
-                Ok(start_fn) => start_fn.typed::<(), ()>(&store),
+            let Some(memory) = instance.get_memory(&mut store, "memory") else {
+                error!("Failed to get memory");
+                continue;
+            };
+
+            let message = match CString::new(
+                serde_json::json!({
+                    "message": "Hello, World!"
+                })
+                .to_string(),
+            ) {
+                Ok(message) => message,
                 Err(error) => {
-                    error!("Failed to get default function: {error}");
-                    continue;
-                }
-            } {
-                Ok(start_fn) => start_fn,
-                Err(error) => {
-                    error!("Failed to get typed function: {error}");
+                    error!("Failed to create message: {error}");
                     continue;
                 }
             };
 
-            let result = match match start_fn.call(&mut store, ()) {
-                Ok(wasm_response) => serde_json::to_value(wasm_response),
-                Err(error) => serde_json::to_value(error.to_string()),
-            } {
+            let required_size = message.as_bytes_with_nul().len() as u64;
+            let current_size = memory.data_size(&store) as u64;
+            let new_size = current_size + required_size;
+
+            let page_size = memory.page_size(&store);
+            let required_pages = (new_size + page_size - 1) / page_size;
+            let current_pages = memory.size(&store);
+
+            if required_pages > current_pages {
+                if let Err(error) = memory.grow(&mut store, required_pages - current_pages) {
+                    error!("Failed to grow memory: {error}");
+                    continue;
+                }
+            }
+
+            let memory_ptr = current_size as usize;
+
+            match memory.write(&mut store, memory_ptr, message.as_bytes_with_nul()) {
+                Ok(()) => {}
+                Err(error) => {
+                    error!("Failed to write message to memory: {error}");
+                    continue;
+                }
+            };
+
+            let Ok(run_fn) = instance.get_typed_func::<u32, u32>(&mut store, "run") else {
+                error!("Failed to get run function");
+                continue;
+            };
+
+            let result_ptr = match run_fn.call_async(&mut store, memory_ptr as u32).await {
+                Ok(result_ptr) => result_ptr as *const c_char,
+                Err(error) => {
+                    error!("Failed to call run_fn: {error}");
+                    continue;
+                }
+            };
+
+            if result_ptr.is_null() {
+                error!("Received invalid pointer from run_fn");
+                continue;
+            }
+
+            let mut buffer = Vec::new();
+
+            let offset = result_ptr as usize;
+            for i in offset..memory.data_size(&store) {
+                let byte = memory.data(&store)[i];
+                if byte == 0 {
+                    break;
+                }
+                buffer.push(byte);
+            }
+
+            let result = match std::str::from_utf8(&buffer) {
+                Ok(s) => s.to_string(),
+                Err(error) => {
+                    error!("Failed to convert result to string: {error}");
+                    continue;
+                }
+            };
+
+            let result = match serde_json::from_str(&result) {
                 Ok(result) => result,
                 Err(error) => {
-                    error!("Failed to serialize result: {error}");
+                    error!("Failed to deserialize result: {error}");
                     continue;
                 }
             };
