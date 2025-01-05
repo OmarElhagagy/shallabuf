@@ -1,7 +1,7 @@
 use dotenvy::dotenv;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, CString};
 use tokio::signal::ctrl_c;
 use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};

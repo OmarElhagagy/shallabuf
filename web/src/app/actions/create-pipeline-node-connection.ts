@@ -1,5 +1,7 @@
 "use server";
 
+import { env } from "~/env";
+
 export interface CreatePipelineNodeConnectionParams {
 	fromNodeId: string;
 	toNodeId: string;
@@ -8,16 +10,13 @@ export interface CreatePipelineNodeConnectionParams {
 export async function createPipelineNodeConnectionAction(
 	params: CreatePipelineNodeConnectionParams,
 ) {
-	const response = await fetch(
-		"http://localhost:8000/api/v0/pipeline_node_connections",
-		{
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
-			body: JSON.stringify(params),
+	const response = await fetch(`${env.API_URL}/pipeline_node_connections`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
 		},
-	);
+		body: JSON.stringify(params),
+	});
 
 	if (!response.ok) {
 		throw new Error(

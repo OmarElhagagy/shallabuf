@@ -1,21 +1,113 @@
-use std::collections::HashSet;
-
-use axum::{extract::Path, Json};
-use axum_extra::extract::Query;
-use db::dtos::{self, PipelineExecPayloadParams};
-use hyper::StatusCode;
-use redis::AsyncCommands;
-use serde::{Deserialize, Serialize};
-use tracing::info;
-use uuid::Uuid;
-
+use super::events::to_pipeline_participant_redis_key;
 use crate::{
     app_state::{DatabaseConnection, JetStream, RedisConnection},
     extractors::session::Session,
     utils::internal_error,
 };
+use axum::{extract::Path, Json};
+use axum_extra::extract::Query;
+use db::dtos::{self, PipelineExecPayloadParams, PipelineTriggerConfig, PipelineTriggerConfigV0};
+use hyper::StatusCode;
+use redis::AsyncCommands;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use tracing::{error, info};
+use uuid::Uuid;
 
-use super::events::to_pipeline_participant_redis_key;
+#[derive(Serialize)]
+pub struct PipelineListItem {
+    id: Uuid,
+    name: String,
+    description: Option<String>,
+}
+
+pub async fn list(
+    DatabaseConnection(mut conn): DatabaseConnection,
+) -> Result<Json<Vec<PipelineListItem>>, StatusCode> {
+    let pipelines = sqlx::query!(
+        r#"
+        SELECT
+            id, name, description
+        FROM
+            pipelines
+        "#
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map(|rows| {
+        rows.iter()
+            .map(|row| PipelineListItem {
+                id: row.id,
+                name: row.name.clone(),
+                description: row.description.clone(),
+            })
+            .collect::<Vec<PipelineListItem>>()
+    })
+    .map_err(|error| {
+        error!("Database error: {error:?}");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    Ok(Json(pipelines))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineCreateParams {
+    team_id: Uuid,
+    name: String,
+    description: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PipelineCreateResponse {
+    id: Uuid,
+}
+
+pub async fn create(
+    DatabaseConnection(mut conn): DatabaseConnection,
+    Session(_): Session,
+    Json(params): Json<PipelineCreateParams>,
+) -> Result<Json<PipelineCreateResponse>, StatusCode> {
+    let pipeline = sqlx::query!(
+        r#"
+        INSERT INTO
+            pipelines (name, description, team_id)
+        VALUES
+            ($1, $2, $3)
+        RETURNING
+            id
+        "#,
+        params.name,
+        params.description,
+        params.team_id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(internal_error)?;
+
+    let trigger_config = serde_json::to_value(PipelineTriggerConfig::V0(PipelineTriggerConfigV0 {
+        allow_manual_execution: true,
+    }))
+    .map_err(internal_error)?;
+
+    let _ = sqlx::query!(
+        r#"
+        INSERT INTO
+            pipeline_triggers (pipeline_id, config)
+        VALUES
+            ($1, $2)
+        "#,
+        pipeline.id,
+        trigger_config
+    )
+    .execute(&mut *conn)
+    .await
+    .map_err(internal_error)?;
+
+    Ok(Json(PipelineCreateResponse { id: pipeline.id }))
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Input {
@@ -61,7 +153,7 @@ pub struct Trigger {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Pipeline {
+pub struct PipelineDetails {
     id: Uuid,
     name: String,
     description: Option<String>,
@@ -103,21 +195,33 @@ pub async fn details(
     Session(session): Session,
     Path(id): Path<Uuid>,
     Query(query): Query<PipelineDetailsQuery>,
-) -> Result<Json<Pipeline>, StatusCode> {
+) -> Result<Json<PipelineDetails>, StatusCode> {
     let pipeline = sqlx::query!(
         r#"
         SELECT
-            p.id AS pipeline_id, p.name, p.description,
-            pn.id AS pipeline_node_id, pn.node_id, pn.node_version, pn.trigger_id AS pipeline_trigger_id, pn.coords,
-            pt.id AS trigger_id, pt.config AS trigger_config,
-            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key AS "output_key?",
-            pc.id AS "connection_id?", pc.to_pipeline_node_input_id AS "to_pipeline_node_input_id?", pc.from_pipeline_node_output_id AS "from_pipeline_node_output_id?"
+            p.id, p.name, p.description,
+            pt.id AS trigger_id, pt.config AS trigger_config
         FROM
             pipelines p
         LEFT JOIN
-            pipeline_nodes pn ON pn.pipeline_id = p.id
-        LEFT JOIN
             pipeline_triggers pt ON pt.pipeline_id = p.id
+        WHERE
+            p.id = $1
+        "#,
+        id
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(internal_error)?;
+
+    let pipeline_nodes = sqlx::query!(
+        r#"
+        SELECT
+            pn.id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,
+            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key AS "output_key?",
+            pc.id AS "connection_id?", pc.to_pipeline_node_input_id AS "to_pipeline_node_input_id?", pc.from_pipeline_node_output_id AS "from_pipeline_node_output_id?"
+        FROM
+            pipeline_nodes pn
         LEFT JOIN
             pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id
         LEFT JOIN
@@ -125,30 +229,26 @@ pub async fn details(
         LEFT JOIN
             pipeline_node_connections pc ON pc.to_pipeline_node_input_id = pni.id OR pc.from_pipeline_node_output_id = pno.id
         WHERE
-            p.id = $1
+            pn.pipeline_id = $1
         "#,
-        id
+        pipeline.id
     )
     .fetch_all(&mut *conn)
     .await
     .map_err(internal_error)?;
 
-    if pipeline.is_empty() {
-        return Err(StatusCode::NOT_FOUND);
-    }
-
     let mut seen_nodes = HashSet::new();
     let mut nodes_map = std::collections::HashMap::new();
 
-    for row in &pipeline {
+    for row in &pipeline_nodes {
         if seen_nodes.insert(row.node_id) {
             nodes_map.insert(
                 row.node_id,
                 Node {
-                    id: row.pipeline_node_id,
+                    id: row.id,
                     node_id: row.node_id,
                     node_version: row.node_version.clone(),
-                    trigger_id: row.pipeline_trigger_id,
+                    trigger_id: row.trigger_id,
                     coords: row.coords.clone(),
                     inputs: Vec::new(),
                     outputs: Vec::new(),
@@ -157,7 +257,7 @@ pub async fn details(
         }
     }
 
-    for row in &pipeline {
+    for row in &pipeline_nodes {
         if let Some(node) = nodes_map.get_mut(&row.node_id) {
             if let Some(input_id) = row.input_id {
                 if !node.inputs.iter().any(|input| input.id == input_id) {
@@ -182,7 +282,7 @@ pub async fn details(
     let nodes: Vec<Node> = nodes_map.into_values().collect();
 
     let mut seen_connections = HashSet::new();
-    let connections = pipeline
+    let connections = pipeline_nodes
         .iter()
         .filter_map(|row| {
             if let (
@@ -245,13 +345,13 @@ pub async fn details(
         }
     }
 
-    let pipeline = Pipeline {
-        id: pipeline[0].pipeline_id,
-        name: pipeline[0].name.clone(),
-        description: pipeline[0].description.clone(),
+    let pipeline = PipelineDetails {
+        id: pipeline.id,
+        name: pipeline.name.clone(),
+        description: pipeline.description.clone(),
         trigger: Trigger {
-            id: pipeline[0].trigger_id,
-            config: pipeline[0].trigger_config.clone(),
+            id: pipeline.trigger_id,
+            config: pipeline.trigger_config.clone(),
         },
         nodes,
         connections,

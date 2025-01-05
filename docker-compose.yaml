@@ -33,19 +33,19 @@ services:
     ports:
       - "6379:6379" # Redis
 
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      - postgres
-      - nats
-      - minio
-      - scheduler
+  # api:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.api
+  #   ports:
+  #     - "8000:8000"
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - postgres
+  #     - nats
+  #     - minio
+  #     - scheduler
 
   scheduler:
     build:

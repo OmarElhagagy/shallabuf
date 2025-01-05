@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            pn.id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,\n            pni.id AS \"input_id?\", pni.key as \"input_key?\", pno.id AS \"output_id?\", pno.key AS \"output_key?\",\n            pc.id AS \"connection_id?\", pc.to_pipeline_node_input_id AS \"to_pipeline_node_input_id?\", pc.from_pipeline_node_output_id AS \"from_pipeline_node_output_id?\"\n        FROM\n            pipeline_nodes pn\n        LEFT JOIN\n            pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_outputs pno ON pno.pipeline_node_id = pn.id\n        LEFT JOIN\n            pipeline_node_connections pc ON pc.to_pipeline_node_input_id = pni.id OR pc.from_pipeline_node_output_id = pno.id\n        WHERE\n            pn.pipeline_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "node_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "node_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "trigger_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "coords",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "input_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 6,
+        "name": "input_key?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "output_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 8,
+        "name": "output_key?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "connection_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 10,
+        "name": "to_pipeline_node_input_id?",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 11,
+        "name": "from_pipeline_node_output_id?",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "83f1f100508259c4ce023f4fa6478cc3a575563256d3c7b8ea220a9e312aea57"
+}

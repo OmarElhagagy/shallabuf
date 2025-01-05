@@ -7,6 +7,7 @@ import {
 import { Link as LinkIcon } from "lucide-react";
 import Link from "next/link";
 import { Button } from "~/components/ui/button";
+import { env } from "~/env";
 import { getSessionToken } from "~/lib/auth";
 import { type Node, NodeType, type Pipeline } from "~/lib/dtos";
 import { Editor } from "./_components/editor";
@@ -21,7 +22,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 	const sessionToken = await getSessionToken();
 
 	try {
-		const data = await fetch(
+		const response = await fetch(
 			`http://localhost:8000/api/v0/pipelines/${params.id}?withParticipants=includeMyself`,
 			{
 				headers: {
@@ -32,14 +33,16 @@ export default async function PipelineDetails(props: { params: Params }) {
 			},
 		);
 
-		pipeline = await data.json();
+		console.debug(response);
+
+		pipeline = await response.json();
 	} catch (error) {
 		console.error(error);
 		return <div>Failed to fetch pipeline</div>;
 	}
 
 	try {
-		const data = await fetch("http://localhost:8000/api/v0/nodes", {
+		const data = await fetch(`${env.API_URL}/nodes`, {
 			headers: {
 				Accept: "application/json",
 				"Content-Type": "application/json",

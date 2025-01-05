@@ -2,12 +2,8 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { env } from "~/env";
 import { loginSchema } from "~/lib/schemas";
-
-export interface LoginParams {
-	email: string;
-	password: string;
-}
 
 export interface Session {
 	token: string;
@@ -34,7 +30,7 @@ export async function loginAction(
 		};
 	}
 
-	const response = await fetch("http://localhost:8000/api/v0/auth/login", {
+	const response = await fetch(`${env.API_URL}/auth/login`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -55,7 +51,7 @@ export async function loginAction(
 		httpOnly: true,
 		path: "/",
 		secure: process.env.NODE_ENV === "production",
-		sameSite: "lax",
+		sameSite: "strict",
 		expires: new Date(session.expiresAt),
 	});
 

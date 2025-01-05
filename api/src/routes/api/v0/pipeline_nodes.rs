@@ -6,8 +6,16 @@ use uuid::Uuid;
 use crate::{
     app_state::{Coords, DatabaseConnection},
     utils::internal_error,
-    PipelineNode,
 };
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PipelineNode {
+    id: Uuid,
+    node_id: Uuid,
+    node_version: String,
+    trigger_id: Option<Uuid>,
+    coords: serde_json::Value,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]

@@ -1,19 +1,16 @@
-use app_state::{AppState, Broadcast, BroadcastEvent, DatabaseConnection};
+use app_state::{AppState, Broadcast, BroadcastEvent};
 use async_nats::{self, jetstream};
 use axum::{
-    http::StatusCode,
     routing::{get, post},
-    Json, Router,
+    Router,
 };
 use db::seed::seed_database;
 use dotenvy::dotenv;
-use serde::{Deserialize, Serialize};
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tokio::{io, sync::broadcast};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
-use uuid::Uuid;
 
 mod app_state;
 mod extractors;
@@ -22,73 +19,6 @@ mod routes;
 mod utils;
 
 static JETSTREAM_NAME: &str = "PIPELINE_ACTIONS";
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PipelineNode {
-    id: Uuid,
-    node_id: Uuid,
-    node_version: String,
-    trigger_id: Option<Uuid>,
-    coords: serde_json::Value,
-}
-
-#[derive(Debug, Serialize)]
-struct PipelineConnection {
-    id: Uuid,
-    to_pipeline_node_input_id: Uuid,
-    from_pipeline_node_output_id: Uuid,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PipelineParticipant {
-    pub id: Uuid,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Pipeline {
-    id: Uuid,
-    name: String,
-    description: Option<String>,
-    nodes: Vec<PipelineNode>,
-    connections: Vec<PipelineConnection>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    participants: Option<Vec<PipelineParticipant>>,
-}
-
-async fn pipelines(
-    DatabaseConnection(mut conn): DatabaseConnection,
-) -> Result<Json<Vec<Pipeline>>, StatusCode> {
-    let pipelines = sqlx::query!(
-        r#"
-        SELECT
-            id, name, description
-        FROM
-            pipelines
-        "#
-    )
-    .fetch_all(&mut *conn)
-    .await
-    .map(|rows| {
-        rows.iter()
-            .map(|row| Pipeline {
-                id: row.id,
-                name: row.name.clone(),
-                description: row.description.clone(),
-                nodes: vec![],
-                connections: vec![],
-                participants: None,
-            })
-            .collect::<Vec<Pipeline>>()
-    })
-    .map_err(|error| {
-        error!("Database error: {error:?}");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    Ok(Json(pipelines))
-}
 
 async fn run_migrations(pool: PgPool) {
     let rust_env = std::env::var("RUST_ENV").unwrap_or("dev".to_string());
@@ -176,14 +106,19 @@ async fn main() -> io::Result<()> {
 
     let app = Router::new()
         .route("/api/v0/auth/login", post(routes::api::v0::auth::login))
-        .route("/api/v0/pipelines", get(pipelines))
+        .route("/api/v0/teams", get(routes::api::v0::teams::list))
+        .route("/api/v0/pipelines", get(routes::api::v0::pipelines::list))
+        .route(
+            "/api/v0/pipelines",
+            post(routes::api::v0::pipelines::create),
+        )
         .route(
             "/api/v0/pipelines/:id",
-            get(routes::api::v0::pipeline::details),
+            get(routes::api::v0::pipelines::details),
         )
         .route(
             "/api/v0/trigger/pipelines/:id",
-            post(routes::api::v0::pipeline::trigger),
+            post(routes::api::v0::pipelines::trigger),
         )
         .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
         .route(
