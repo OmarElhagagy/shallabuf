@@ -21,15 +21,15 @@ export interface Pipeline {
 		};
 	};
 	nodes: PipelineNode[];
-	connections: PipelineConnection[];
+	connections: PipelineNodeConnection[];
 	participants?: PipelineParticipant[];
 }
 
 export interface PipelineNode {
 	id: string;
-	node_id: string;
-	node_version: string;
-	trigger_id?: string;
+	nodeId: string;
+	nodeVersion: string;
+	triggerId?: string;
 	inputs: { id: string; key: string }[];
 	outputs: { id: string; key: string }[];
 	coords: {
@@ -38,10 +38,10 @@ export interface PipelineNode {
 	};
 }
 
-export interface PipelineConnection {
+export interface PipelineNodeConnection {
 	id: string;
-	to_pipeline_node_input_id: string;
-	from_pipeline_node_output_id: string;
+	toPipelineNodeInputId: string;
+	fromPipelineNodeOutputId: string;
 }
 
 export enum NodeType {

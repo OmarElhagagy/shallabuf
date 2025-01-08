@@ -23,7 +23,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 
 	try {
 		const response = await fetch(
-			`http://localhost:8000/api/v0/pipelines/${params.id}?withParticipants=includeMyself`,
+			`${env.API_URL}/pipelines/${params.id}?withParticipants=includeMyself`,
 			{
 				headers: {
 					Accept: "application/json",
@@ -33,8 +33,6 @@ export default async function PipelineDetails(props: { params: Params }) {
 			},
 		);
 
-		console.debug(response);
-
 		pipeline = await response.json();
 	} catch (error) {
 		console.error(error);
@@ -42,7 +40,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 	}
 
 	try {
-		const data = await fetch(`${env.API_URL}/nodes`, {
+		const response = await fetch(`${env.API_URL}/nodes`, {
 			headers: {
 				Accept: "application/json",
 				"Content-Type": "application/json",
@@ -50,39 +48,39 @@ export default async function PipelineDetails(props: { params: Params }) {
 			},
 		});
 
-		availableNodes = await data.json();
+		availableNodes = await response.json();
 	} catch (error) {
 		console.error(error);
 		return <div>Failed to fetch nodes</div>;
 	}
 
 	const nodes: Parameters<typeof useNodesState>[0] = pipeline.nodes.map(
-		(pipeline_node) => {
+		(pipelineNode) => {
 			const node = availableNodes.find(
-				(available_node) => available_node.id === pipeline_node.node_id,
+				(available_node) => available_node.id === pipelineNode.nodeId,
 			);
 
 			return {
-				id: pipeline_node.id,
-				position: pipeline_node.coords,
+				id: pipelineNode.id,
+				position: pipelineNode.coords,
 				type: NodeType.Task,
 				data: {
-					name: `${node?.name}:${pipeline_node.node_version}`,
+					name: `${node?.name}:${pipelineNode.nodeVersion}`,
 					config: node?.config,
-					inputs: pipeline_node.inputs.map((input) => ({
+					inputs: pipelineNode.inputs.map((input) => ({
 						...input,
 						controlled: pipeline.nodes.some((node) => {
 							return node.outputs.some((output) => {
 								return pipeline.connections.some((connection) => {
 									return (
-										connection.from_pipeline_node_output_id === output.id &&
-										connection.to_pipeline_node_input_id === input.id
+										connection.fromPipelineNodeOutputId === output.id &&
+										connection.toPipelineNodeInputId === input.id
 									);
 								});
 							});
 						}),
 					})),
-					outputs: pipeline_node.outputs,
+					outputs: pipelineNode.outputs,
 				},
 			};
 		},
@@ -108,36 +106,39 @@ export default async function PipelineDetails(props: { params: Params }) {
 			source:
 				pipeline.nodes.find((node) => {
 					return node.outputs.some((output) => {
-						return output.id === connection.from_pipeline_node_output_id;
+						return output.id === connection.fromPipelineNodeOutputId;
 					});
 				})?.id ?? "",
 			target:
 				pipeline.nodes.find((node) => {
 					return node.inputs.some((input) => {
-						return input.id === connection.to_pipeline_node_input_id;
+						return input.id === connection.toPipelineNodeInputId;
 					});
 				})?.id ?? "",
 			animated: true,
 			deletable: true,
 			focusable: true,
-			sourceHandle: connection.from_pipeline_node_output_id,
-			targetHandle: connection.to_pipeline_node_input_id,
+			sourceHandle: connection.fromPipelineNodeOutputId,
+			targetHandle: connection.toPipelineNodeInputId,
 			selectable: true,
 		}),
 	);
 
-	edges.push({
-		id: pipeline.trigger.id,
-		source: pipeline.trigger.id,
-		target:
-			pipeline.nodes.find((node) => {
-				return node.trigger_id === pipeline.trigger.id;
-			})?.id ?? "",
-		animated: true,
-		deletable: true,
-		focusable: true,
-		selectable: true,
-	});
+	const triggerNode = pipeline.nodes.find(
+		(node) => node.triggerId === pipeline.trigger.id,
+	);
+
+	if (triggerNode) {
+		edges.push({
+			id: pipeline.trigger.id,
+			source: pipeline.trigger.id,
+			target: triggerNode.id,
+			animated: true,
+			deletable: true,
+			focusable: true,
+			selectable: true,
+		});
+	}
 
 	return (
 		<div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">

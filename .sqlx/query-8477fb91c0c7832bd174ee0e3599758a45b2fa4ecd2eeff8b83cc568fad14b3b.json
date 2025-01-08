@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        UPDATE\n            pipeline_nodes\n        SET\n            coords = COALESCE($1, coords)\n        WHERE\n            id = $2\n        RETURNING\n            id, node_id, node_version, trigger_id, coords\n        ",
+  "query": "\n        UPDATE\n            pipeline_nodes\n        SET\n            coords = COALESCE($1, coords),\n            trigger_id = COALESCE($2, trigger_id)\n        WHERE\n            id = $3\n        RETURNING\n            id, node_id, node_version, trigger_id, coords\n        ",
   "describe": {
     "columns": [
       {
@@ -32,6 +32,7 @@
     "parameters": {
       "Left": [
         "Jsonb",
+        "Uuid",
         "Uuid"
       ]
     },
@@ -43,5 +44,5 @@
       false
     ]
   },
-  "hash": "2d5a980efc62500e9eb3c5e390b84a34517d6c87c5a81986465cec94df7da933"
+  "hash": "8477fb91c0c7832bd174ee0e3599758a45b2fa4ecd2eeff8b83cc568fad14b3b"
 }

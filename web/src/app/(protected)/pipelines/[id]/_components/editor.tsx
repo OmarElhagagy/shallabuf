@@ -8,6 +8,7 @@ import {
 import {
 	Background,
 	BackgroundVariant,
+	type Edge,
 	type OnConnect,
 	Panel,
 	ReactFlow,
@@ -29,9 +30,16 @@ import React, {
 import { useShallow } from "zustand/react/shallow";
 import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
 import { createPipelineNodeConnectionAction } from "~/app/actions/create-pipeline-node-connection";
+import { createPipelineTriggerConnectionAction } from "~/app/actions/create-pipeline-trigger-connection";
 import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
 import { useWsStore } from "~/contexts/ws-store-context";
-import type { Node, PipelineNode, PipelineParticipant } from "~/lib/dtos";
+import {
+	type Node,
+	NodeType,
+	type PipelineNode,
+	type PipelineNodeConnection,
+	type PipelineParticipant,
+} from "~/lib/dtos";
 import type { WsStoreState } from "~/stores/ws-store";
 import { Dropzone } from "./dropzone";
 import { NodeItem } from "./node-item";
@@ -98,23 +106,57 @@ export const Editor = (props: EditorProps) => {
 
 	const onConnect: OnConnect = useCallback(
 		async (params) => {
-			const connection = await createPipelineNodeConnectionAction({
-				fromNodeId: params.source,
-				toNodeId: params.target,
-			});
+			const commonEdgeParams: Partial<Edge> = {
+				animated: true,
+				deletable: true,
+				focusable: true,
+				selectable: true,
+			};
 
-			setEdges((eds) => {
-				return addEdge(
-					{
-						...params,
-						source: connection.fromNodeId,
-						target: connection.toNodeId,
-					},
-					eds,
-				);
-			});
+			if (
+				nodes.find((node) => node.id === params.source)?.type ===
+				NodeType.Trigger
+			) {
+				const pipelineNode: PipelineNode =
+					await createPipelineTriggerConnectionAction({
+						triggerId: params.source,
+						nodeId: params.target,
+					});
+
+				setEdges((eds) => {
+					return addEdge(
+						{
+							...commonEdgeParams,
+							id: pipelineNode.triggerId ?? "",
+							source: pipelineNode.triggerId ?? "",
+							target: pipelineNode.id,
+						},
+						eds,
+					);
+				});
+			} else {
+				const connection: PipelineNodeConnection =
+					await createPipelineNodeConnectionAction({
+						fromNodeId: params.source,
+						toNodeId: params.target,
+					});
+
+				setEdges((eds) => {
+					return addEdge(
+						{
+							...commonEdgeParams,
+							id: connection.id,
+							source: params.source,
+							target: params.target,
+							sourceHandle: connection.fromPipelineNodeOutputId,
+							targetHandle: connection.toPipelineNodeInputId,
+						},
+						eds,
+					);
+				});
+			}
 		},
-		[setEdges],
+		[nodes, setEdges],
 	);
 
 	useEffect(() => {
@@ -197,13 +239,17 @@ export const Editor = (props: EditorProps) => {
 		const pipelineNode: PipelineNode = await createPipelineNodeAction({
 			pipelineId,
 			nodeId: draggableNodeItem.toString(),
-			nodeVersion: "latest",
+			nodeVersion: "v1",
 			// FIXME: This should be the actual cursor position
 			coords: {
 				x: 250,
 				y: 25,
 			},
 		});
+
+		const node = props.availableNodes.find(
+			(node) => node.id === pipelineNode.nodeId,
+		);
 
 		setDraggableNodeItem("");
 
@@ -213,13 +259,17 @@ export const Editor = (props: EditorProps) => {
 				{
 					id: pipelineNode.id,
 					position: pipelineNode.coords,
+					type: NodeType.Task,
 					data: {
-						label: pipelineNode.id,
+						name: `${node?.name}:${pipelineNode.nodeVersion}`,
+						config: node?.config,
+						inputs: pipelineNode.inputs,
+						outputs: pipelineNode.outputs,
 					},
 				},
 			];
 		});
-	}, [draggableNodeItem, pipelineId, setNodes]);
+	}, [draggableNodeItem, pipelineId, props.availableNodes, setNodes]);
 
 	return (
 		<div className="w-full h-full relative">

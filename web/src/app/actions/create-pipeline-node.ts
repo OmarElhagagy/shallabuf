@@ -12,7 +12,9 @@ export interface CreatePipelineNodeParams {
 export async function createPipelineNodeAction(
 	params: CreatePipelineNodeParams,
 ) {
-	const response = await fetch(`${env.API_URL}/pipeline_nodes`, {
+	console.log("params", params);
+
+	const response = await fetch(`${env.API_URL}/pipeline-nodes`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",

@@ -1,6 +1,7 @@
 "use server";
 
 import { env } from "~/env";
+import { getSessionToken } from "~/lib/auth";
 
 export interface CreatePipelineNodeConnectionParams {
 	fromNodeId: string;
@@ -10,10 +11,14 @@ export interface CreatePipelineNodeConnectionParams {
 export async function createPipelineNodeConnectionAction(
 	params: CreatePipelineNodeConnectionParams,
 ) {
-	const response = await fetch(`${env.API_URL}/pipeline_node_connections`, {
+	const sessionToken = getSessionToken();
+
+	const response = await fetch(`${env.API_URL}/pipeline-node-connections`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
+			Accept: "application/json",
+			Authorization: `Bearer ${sessionToken}`,
 		},
 		body: JSON.stringify(params),
 	});

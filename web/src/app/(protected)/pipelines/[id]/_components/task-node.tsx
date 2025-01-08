@@ -20,7 +20,7 @@ import { SelectInput } from "./select-input";
 export type TaskNodeProps = Node<
 	{
 		name: string;
-		config: TaskNodeConfig;
+		config?: TaskNodeConfig;
 		inputs: Array<
 			Pipeline["nodes"][number]["inputs"][number] & { controlled: boolean }
 		>;
@@ -37,7 +37,7 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 			</CardHeader>
 
 			<CardContent>
-				{data.config.inputs.map(({ key, label, input }) => {
+				{data.config?.inputs.map(({ key, label, input }) => {
 					const inputHandle = data.inputs.find((input) => input.key === key);
 
 					return (
@@ -79,7 +79,7 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 
 				<Separator className="my-4" />
 
-				{data.config.outputs.map(({ key, label, output }) => (
+				{data.config?.outputs.map(({ key, label, output }) => (
 					<div
 						key={key}
 						className="relative flex items-center [&:not(:first-child)]:mt-2"

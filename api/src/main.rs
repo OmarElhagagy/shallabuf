@@ -122,15 +122,15 @@ async fn main() -> io::Result<()> {
         )
         .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
         .route(
-            "/api/v0/pipeline_nodes",
+            "/api/v0/pipeline-nodes",
             post(routes::api::v0::pipeline_nodes::create),
         )
         .route(
-            "/api/v0/pipeline_nodes/:id",
+            "/api/v0/pipeline-nodes/:id",
             post(routes::api::v0::pipeline_nodes::update),
         )
         .route(
-            "/api/v0/pipeline_node_connections",
+            "/api/v0/pipeline-node-connections",
             post(routes::api::v0::pipeline_node_connections::create),
         )
         .route("/api/v0/ws", get(routes::api::v0::events::ws_events))

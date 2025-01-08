@@ -1,4 +1,7 @@
-use super::events::to_pipeline_participant_redis_key;
+use super::{
+    events::to_pipeline_participant_redis_key,
+    pipeline_nodes::{Input, Output, PipelineConnection, PipelineNode},
+};
 use crate::{
     app_state::{DatabaseConnection, JetStream, RedisConnection},
     extractors::session::Session,
@@ -9,7 +12,7 @@ use axum_extra::extract::Query;
 use db::dtos::{self, PipelineExecPayloadParams, PipelineTriggerConfig, PipelineTriggerConfigV0};
 use hyper::StatusCode;
 use redis::AsyncCommands;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::HashSet;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -109,36 +112,6 @@ pub async fn create(
     Ok(Json(PipelineCreateResponse { id: pipeline.id }))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Input {
-    id: Uuid,
-    key: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Output {
-    id: Uuid,
-    key: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Node {
-    id: Uuid,
-    node_id: Uuid,
-    node_version: String,
-    trigger_id: Option<Uuid>,
-    coords: serde_json::Value,
-    inputs: Vec<Input>,
-    outputs: Vec<Output>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct PipelineConnection {
-    id: Uuid,
-    to_pipeline_node_input_id: Uuid,
-    from_pipeline_node_output_id: Uuid,
-}
-
 #[derive(Debug, Serialize)]
 pub struct PipelineParticipant {
     pub id: Uuid,
@@ -158,7 +131,7 @@ pub struct PipelineDetails {
     name: String,
     description: Option<String>,
     trigger: Trigger,
-    nodes: Vec<Node>,
+    nodes: Vec<PipelineNode>,
     connections: Vec<PipelineConnection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     participants: Option<Vec<PipelineParticipant>>,
@@ -244,7 +217,7 @@ pub async fn details(
         if seen_nodes.insert(row.node_id) {
             nodes_map.insert(
                 row.node_id,
-                Node {
+                PipelineNode {
                     id: row.id,
                     node_id: row.node_id,
                     node_version: row.node_version.clone(),
@@ -279,7 +252,7 @@ pub async fn details(
         }
     }
 
-    let nodes: Vec<Node> = nodes_map.into_values().collect();
+    let nodes: Vec<PipelineNode> = nodes_map.into_values().collect();
 
     let mut seen_connections = HashSet::new();
     let connections = pipeline_nodes

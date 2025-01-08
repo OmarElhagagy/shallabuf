@@ -11,7 +11,7 @@ export async function updatePipelineNodeAction({
 	id,
 	coords,
 }: UpdatePipelineNodeParams) {
-	const response = await fetch(`${env.API_URL}/pipeline_nodes/${id}`, {
+	const response = await fetch(`${env.API_URL}/pipeline-nodes/${id}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
