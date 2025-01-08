@@ -115,7 +115,6 @@ async fn handle_ws_events(
                                     } else {
                                         warn!("WsAction::UpdateNodePosition: User isn't authenticated");
                                     }
-
                                 }
                                 WsClientAction::EnterPipelineEditor(action) => {
                                     if let Some(user_id) = user_id {

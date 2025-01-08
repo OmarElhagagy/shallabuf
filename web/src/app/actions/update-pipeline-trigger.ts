@@ -3,18 +3,18 @@
 import { env } from "~/env";
 import { getSessionToken } from "~/lib/auth";
 
-export interface UpdatePipelineNodeParams {
+export interface UpdatePipelineTriggerParams {
 	id: string;
 	coords: { x: number; y: number };
 }
 
-export async function updatePipelineNodeAction({
+export async function updatePipelineTriggerAction({
 	id,
 	coords,
-}: UpdatePipelineNodeParams) {
+}: UpdatePipelineTriggerParams) {
 	const sessionToken = await getSessionToken();
 
-	const response = await fetch(`${env.API_URL}/pipeline-nodes/${id}`, {
+	const response = await fetch(`${env.API_URL}/pipeline-triggers/${id}`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -25,7 +25,7 @@ export async function updatePipelineNodeAction({
 
 	if (!response.ok) {
 		throw new Error(
-			`Failed to update node: ${response.status} - ${await response.text()}`,
+			`Failed to update trigger: ${response.status} - ${await response.text()}`,
 		);
 	}
 }

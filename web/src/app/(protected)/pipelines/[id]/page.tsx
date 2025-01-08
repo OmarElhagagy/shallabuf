@@ -67,6 +67,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 				data: {
 					name: `${node?.name}:${pipelineNode.nodeVersion}`,
 					config: node?.config,
+					triggerId: pipelineNode.triggerId,
 					inputs: pipelineNode.inputs.map((input) => ({
 						...input,
 						controlled: pipeline.nodes.some((node) => {
@@ -88,10 +89,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 
 	nodes.push({
 		id: pipeline.trigger.id,
-		position: {
-			x: -154,
-			y: -112,
-		},
+		position: pipeline.trigger.coords,
 		type: NodeType.Trigger,
 		data: {
 			name: "Trigger",

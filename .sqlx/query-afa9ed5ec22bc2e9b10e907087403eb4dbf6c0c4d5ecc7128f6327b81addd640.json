@@ -1,0 +1,35 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE\n            pipeline_triggers\n        SET\n            coords = COALESCE($1, coords)\n        WHERE\n            id = $2\n        RETURNING\n            id, coords, config\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "coords",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 2,
+        "name": "config",
+        "type_info": "Json"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Jsonb",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "afa9ed5ec22bc2e9b10e907087403eb4dbf6c0c4d5ecc7128f6327b81addd640"
+}

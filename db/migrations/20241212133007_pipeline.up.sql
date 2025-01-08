@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS pipelines (
 CREATE TABLE IF NOT EXISTS pipeline_triggers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     pipeline_id UUID NOT NULL,
+    coords JSONB NOT NULL,
     config JSON NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

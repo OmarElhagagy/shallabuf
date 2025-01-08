@@ -32,6 +32,7 @@ import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
 import { createPipelineNodeConnectionAction } from "~/app/actions/create-pipeline-node-connection";
 import { createPipelineTriggerConnectionAction } from "~/app/actions/create-pipeline-trigger-connection";
 import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
+import { updatePipelineTriggerAction } from "~/app/actions/update-pipeline-trigger";
 import { useWsStore } from "~/contexts/ws-store-context";
 import {
 	type Node,
@@ -123,6 +124,22 @@ export const Editor = (props: EditorProps) => {
 						nodeId: params.target,
 					});
 
+				setNodes((nodes) => {
+					return nodes.map((node) => {
+						if (node.id === pipelineNode.id) {
+							return {
+								...node,
+								data: {
+									...node.data,
+									triggerId: pipelineNode.triggerId,
+								},
+							};
+						}
+
+						return node;
+					});
+				});
+
 				setEdges((eds) => {
 					return addEdge(
 						{
@@ -156,7 +173,7 @@ export const Editor = (props: EditorProps) => {
 				});
 			}
 		},
-		[nodes, setEdges],
+		[nodes, setEdges, setNodes],
 	);
 
 	useEffect(() => {
@@ -194,13 +211,23 @@ export const Editor = (props: EditorProps) => {
 	const saveNodePosition: NonNullable<
 		Parameters<typeof ReactFlow>[0]["onNodeDragStop"]
 	> = useCallback(async (_event, node) => {
-		await updatePipelineNodeAction({
-			id: node.id,
-			coords: {
-				x: node.position.x,
-				y: node.position.y,
-			},
-		});
+		if (node.type === NodeType.Trigger) {
+			await updatePipelineTriggerAction({
+				id: node.id,
+				coords: {
+					x: node.position.x,
+					y: node.position.y,
+				},
+			});
+		} else {
+			await updatePipelineNodeAction({
+				id: node.id,
+				coords: {
+					x: node.position.x,
+					y: node.position.y,
+				},
+			});
+		}
 	}, []);
 
 	const { getViewport } = useReactFlow();

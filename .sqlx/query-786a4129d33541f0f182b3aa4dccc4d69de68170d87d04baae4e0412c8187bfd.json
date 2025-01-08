@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO\n            pipeline_triggers (pipeline_id, coords, config)\n        VALUES\n            ($1, $2, $3)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Jsonb",
+        "Json"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "786a4129d33541f0f182b3aa4dccc4d69de68170d87d04baae4e0412c8187bfd"
+}

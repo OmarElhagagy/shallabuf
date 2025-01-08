@@ -120,6 +120,10 @@ async fn main() -> io::Result<()> {
             "/api/v0/trigger/pipelines/:id",
             post(routes::api::v0::pipelines::trigger),
         )
+        .route(
+            "/api/v0/pipeline-triggers/:id",
+            post(routes::api::v0::pipeline_triggers::update),
+        )
         .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
         .route(
             "/api/v0/pipeline-nodes",

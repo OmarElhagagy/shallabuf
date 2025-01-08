@@ -2,6 +2,7 @@ use super::{
     events::to_pipeline_participant_redis_key,
     pipeline_nodes::{Input, Output, PipelineConnection, PipelineNode},
 };
+use crate::routes::api::v0::pipeline_triggers::PipelineTrigger;
 use crate::{
     app_state::{DatabaseConnection, JetStream, RedisConnection},
     extractors::session::Session,
@@ -98,11 +99,15 @@ pub async fn create(
     let _ = sqlx::query!(
         r#"
         INSERT INTO
-            pipeline_triggers (pipeline_id, config)
+            pipeline_triggers (pipeline_id, coords, config)
         VALUES
-            ($1, $2)
+            ($1, $2, $3)
         "#,
         pipeline.id,
+        serde_json::json!({
+            "x": -154,
+            "y": -112,
+        }),
         trigger_config
     )
     .execute(&mut *conn)
@@ -119,18 +124,12 @@ pub struct PipelineParticipant {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Trigger {
-    id: Uuid,
-    config: serde_json::Value,
-}
-
-#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineDetails {
     id: Uuid,
     name: String,
     description: Option<String>,
-    trigger: Trigger,
+    trigger: PipelineTrigger,
     nodes: Vec<PipelineNode>,
     connections: Vec<PipelineConnection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -173,7 +172,7 @@ pub async fn details(
         r#"
         SELECT
             p.id, p.name, p.description,
-            pt.id AS trigger_id, pt.config AS trigger_config
+            pt.id AS trigger_id, pt.coords as trigger_coords, pt.config AS trigger_config
         FROM
             pipelines p
         LEFT JOIN
@@ -322,8 +321,9 @@ pub async fn details(
         id: pipeline.id,
         name: pipeline.name.clone(),
         description: pipeline.description.clone(),
-        trigger: Trigger {
+        trigger: PipelineTrigger {
             id: pipeline.trigger_id,
+            coords: pipeline.trigger_coords.clone(),
             config: pipeline.trigger_config.clone(),
         },
         nodes,

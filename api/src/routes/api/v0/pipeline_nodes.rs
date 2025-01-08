@@ -135,9 +135,9 @@ pub struct PipelineNodeUpdate {
 pub async fn update(
     DatabaseConnection(mut conn): DatabaseConnection,
     Path(id): Path<Uuid>,
-    Json(payload): Json<PipelineNodeUpdate>,
+    Json(params): Json<PipelineNodeUpdate>,
 ) -> Result<Json<PipelineNode>, StatusCode> {
-    let coords = payload
+    let coords = params
         .coords
         .as_ref()
         .map(|c| serde_json::to_value(c).map_err(internal_error))
@@ -156,7 +156,7 @@ pub async fn update(
             id, node_id, node_version, trigger_id, coords
         "#,
         coords,
-        payload.trigger_id,
+        params.trigger_id,
         id
     )
     .fetch_one(&mut *conn)

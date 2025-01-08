@@ -166,11 +166,15 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let pipeline_trigger = sqlx::query!(
         r#"
-        INSERT INTO pipeline_triggers (pipeline_id, config)
-        VALUES ($1, $2)
+        INSERT INTO pipeline_triggers (pipeline_id, coords, config)
+        VALUES ($1, $2, $3)
         RETURNING id
         "#,
         pipeline.id,
+        serde_json::json!({
+            "x": -154,
+            "y": -112,
+        }),
         pipeline_trigger_config
     )
     .fetch_one(db)

@@ -16,6 +16,7 @@ export interface Pipeline {
 	description?: string;
 	trigger: {
 		id: string;
+		coords: { x: number; y: number };
 		config: {
 			[key: string]: string;
 		};

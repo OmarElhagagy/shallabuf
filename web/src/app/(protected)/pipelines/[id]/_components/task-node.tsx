@@ -21,6 +21,7 @@ export type TaskNodeProps = Node<
 	{
 		name: string;
 		config?: TaskNodeConfig;
+		triggerId?: string;
 		inputs: Array<
 			Pipeline["nodes"][number]["inputs"][number] & { controlled: boolean }
 		>;
@@ -40,6 +41,9 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 				{data.config?.inputs.map(({ key, label, input }) => {
 					const inputHandle = data.inputs.find((input) => input.key === key);
 
+					const willBeComputed =
+						inputHandle?.controlled || Boolean(data.triggerId);
+
 					return (
 						<div key={key} className="relative [&:not(:first-child)]:mt-2">
 							<Handle
@@ -58,11 +62,9 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 
 							{isTaskNodeConfigV0InputText(input) && (
 								<Input
-									disabled={inputHandle?.controlled}
+									disabled={willBeComputed}
 									defaultValue={input.text.default}
-									placeholder={
-										inputHandle?.controlled ? "Will be computed" : ""
-									}
+									placeholder={willBeComputed ? "Will be computed" : ""}
 								/>
 							)}
 
