@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useActionState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
-import { loginAction } from "~/app/actions/login";
+import { loginAction } from "~/actions/login";
 import { Button } from "~/components/ui/button";
 import {
 	Card,

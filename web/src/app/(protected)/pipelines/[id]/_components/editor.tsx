@@ -28,11 +28,11 @@ import React, {
 	useState,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
-import { createPipelineNodeConnectionAction } from "~/app/actions/create-pipeline-node-connection";
-import { createPipelineTriggerConnectionAction } from "~/app/actions/create-pipeline-trigger-connection";
-import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
-import { updatePipelineTriggerAction } from "~/app/actions/update-pipeline-trigger";
+import { createPipelineNodeAction } from "~/actions/create-pipeline-node";
+import { createPipelineNodeConnectionAction } from "~/actions/create-pipeline-node-connection";
+import { createPipelineTriggerConnectionAction } from "~/actions/create-pipeline-trigger-connection";
+import { updatePipelineNodeAction } from "~/actions/update-pipeline-node";
+import { updatePipelineTriggerAction } from "~/actions/update-pipeline-trigger";
 import { useWsStore } from "~/contexts/ws-store-context";
 import {
 	type Node,

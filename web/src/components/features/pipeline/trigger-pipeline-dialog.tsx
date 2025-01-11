@@ -3,8 +3,8 @@ import { useHandleConnections, useNodesData } from "@xyflow/react";
 import { Loader, PlayIcon } from "lucide-react";
 import { memo, useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
+import { triggerPipelineAction } from "~/actions/trigger-pipeline";
 import type { TaskNodeProps } from "~/app/(protected)/pipelines/[id]/_components/task-node";
-import { triggerPipelineAction } from "~/app/actions/trigger-pipeline";
 import { Button } from "~/components/ui/button";
 import {
 	Dialog,

@@ -4,7 +4,7 @@ import { Loader } from "lucide-react";
 import { memo, useActionState, useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { z } from "zod";
-import { createPipelineAction } from "~/app/actions/create-pipeline";
+import { createPipelineAction } from "~/actions/create-pipeline";
 import { Button } from "~/components/ui/button";
 import {
 	Dialog,
