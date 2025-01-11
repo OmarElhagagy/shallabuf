@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
 	Select,
 	SelectContent,
@@ -8,19 +8,43 @@ import {
 } from "~/components/ui/select";
 import type { TaskNodeConfigV0InputSelect } from "~/lib/dtos";
 
-export const SelectInput = (props: TaskNodeConfigV0InputSelect["select"]) => {
-	const [value, setValue] = useState(props.default);
-	const displayValue = props.options.find((option) => option.value === value)
-		?.label.en;
+export interface SelectInputProps {
+	defaultValue?: string;
+	options: TaskNodeConfigV0InputSelect["select"]["options"];
+	value?: string;
+	onChange?: (value: string) => void;
+}
+
+export const SelectInput = ({
+	defaultValue,
+	options,
+	value,
+	onChange,
+}: SelectInputProps) => {
+	const [currentValue, setCurrentValue] = useState(value ?? defaultValue);
+	const displayValue = options.find((option) => option.value === value)?.label
+		.en;
+
+	const onValueChangeHandler = useCallback(
+		(nextValue: string) => {
+			onChange?.(nextValue);
+			setCurrentValue(nextValue);
+		},
+		[onChange],
+	);
 
 	return (
-		<Select defaultValue={props.default} value={value} onValueChange={setValue}>
+		<Select
+			defaultValue={defaultValue}
+			value={currentValue}
+			onValueChange={onValueChangeHandler}
+		>
 			<SelectTrigger>
 				<SelectValue>{displayValue}</SelectValue>
 			</SelectTrigger>
 
 			<SelectContent>
-				{props.options.map((option) => (
+				{options.map((option) => (
 					<SelectItem key={option.value} value={option.value}>
 						{option.label.en}
 					</SelectItem>

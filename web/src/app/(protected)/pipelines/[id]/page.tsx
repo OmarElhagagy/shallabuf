@@ -92,6 +92,7 @@ export default async function PipelineDetails(props: { params: Params }) {
 		position: pipeline.trigger.coords,
 		type: NodeType.Trigger,
 		data: {
+			id: pipeline.trigger.id,
 			name: "Trigger",
 			pipelineId: pipeline.id,
 			config: pipeline.trigger.config,

@@ -73,6 +73,20 @@ export type TaskNodeConfigV0Input =
 	| TaskNodeConfigV0InputSelect
 	| "binary";
 
+export const getDefaultFromTaskNodeConfigV0Input = (
+	input: TaskNodeConfigV0Input,
+): string => {
+	if (isTaskNodeConfigV0InputText(input)) {
+		return input.text.default ?? "";
+	}
+
+	if (isTaskNodeConfigV0InputSelect(input)) {
+		return input.select.default ?? "";
+	}
+
+	return "";
+};
+
 export const isTaskNodeConfigV0InputText = (
 	input: TaskNodeConfigV0Input,
 ): input is TaskNodeConfigV0InputText => {

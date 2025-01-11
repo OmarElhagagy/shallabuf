@@ -1,12 +1,11 @@
 import { Handle, type Node, type NodeProps, Position } from "@xyflow/react";
-import { Play as PlayIcon } from "lucide-react";
-import { triggerPipelineAction } from "~/app/actions/trigger-pipeline";
-import { Button } from "~/components/ui/button";
+import { TriggerPipelineDialog } from "~/components/features/pipeline/trigger-pipeline-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
 import type { TaskNodeConfig } from "~/lib/dtos";
 
 export type TriggerNodeProps = Node<
 	{
+		id: string;
 		name: string;
 		pipelineId: string;
 		config: TaskNodeConfig;
@@ -31,14 +30,10 @@ export const TriggerNode = ({
 					isConnectable={isConnectable}
 				/>
 
-				<Button
-					className="flex items-center justify-center w-full"
-					onClick={async () => {
-						await triggerPipelineAction(data.pipelineId);
-					}}
-				>
-					<PlayIcon />
-				</Button>
+				<TriggerPipelineDialog
+					pipelineId={data.pipelineId}
+					triggerId={data.id}
+				/>
 			</CardContent>
 		</Card>
 	);

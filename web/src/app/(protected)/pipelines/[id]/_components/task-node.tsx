@@ -5,17 +5,10 @@ import {
 	Image as ImageIcon,
 	Text as TextIcon,
 } from "lucide-react";
+import { NodeInput } from "~/components/features/pipeline/node-input";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
-import {
-	type Pipeline,
-	type TaskNodeConfig,
-	isTaskNodeConfigV0InputBinary,
-	isTaskNodeConfigV0InputSelect,
-	isTaskNodeConfigV0InputText,
-} from "~/lib/dtos";
-import { SelectInput } from "./select-input";
+import type { Pipeline, TaskNodeConfig } from "~/lib/dtos";
 
 export type TaskNodeProps = Node<
 	{
@@ -58,23 +51,11 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 								}}
 							/>
 
-							<Label>{label.en}</Label>
-
-							{isTaskNodeConfigV0InputText(input) && (
-								<Input
-									disabled={willBeComputed}
-									defaultValue={input.text.default}
-									placeholder={willBeComputed ? "Will be computed" : ""}
-								/>
-							)}
-
-							{isTaskNodeConfigV0InputSelect(input) && (
-								<SelectInput {...input.select} />
-							)}
-
-							{isTaskNodeConfigV0InputBinary(input) && (
-								<Input type="file" accept="image/*" />
-							)}
+							<NodeInput
+								label={label.en}
+								input={input}
+								willBeComputed={willBeComputed}
+							/>
 						</div>
 					);
 				})}

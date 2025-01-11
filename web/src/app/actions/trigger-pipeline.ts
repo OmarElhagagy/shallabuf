@@ -2,7 +2,9 @@
 import { env } from "~/env";
 import { getSessionToken } from "~/lib/auth";
 
-export async function triggerPipelineAction(pipelineId: string) {
+export async function triggerPipelineAction(formData: FormData) {
+	const pipelineId = formData.get("pipelineId") as string;
+
 	const sessionToken = await getSessionToken();
 
 	const response = await fetch(
@@ -14,7 +16,7 @@ export async function triggerPipelineAction(pipelineId: string) {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${sessionToken}`,
 			},
-			body: JSON.stringify({}),
+			body: formData.get("inputs"),
 		},
 	);
 
