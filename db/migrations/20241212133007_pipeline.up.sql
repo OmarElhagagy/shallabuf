@@ -157,6 +157,15 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_execs_pipeline_id
 CREATE INDEX IF NOT EXISTS idx_pipeline_node_execs_pipeline_node_id
     ON pipeline_node_execs(pipeline_node_id);
 
+-- Create function to notify pipeline_exec_events channel
+CREATE OR REPLACE FUNCTION notify_pipeline_exec_events()
+RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('pipeline_exec_events', row_to_json(NEW)::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create triggers
 CREATE TRIGGER set_updated_at_templates
 BEFORE UPDATE ON templates
@@ -197,3 +206,13 @@ CREATE TRIGGER set_updated_at_pipeline_node_outputs
 BEFORE UPDATE ON pipeline_node_outputs
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER notify_pipeline_execs_update
+AFTER UPDATE ON pipeline_execs
+FOR EACH ROW
+EXECUTE FUNCTION notify_pipeline_exec_events();
+
+CREATE TRIGGER notify_pipeline_node_execs_update
+AFTER UPDATE ON pipeline_node_execs
+FOR EACH ROW
+EXECUTE FUNCTION notify_pipeline_exec_events();

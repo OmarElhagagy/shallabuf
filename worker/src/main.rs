@@ -160,12 +160,7 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             };
 
-            let message = match CString::new(
-                serde_json::json!({
-                    "message": "Hello, World!"
-                })
-                .to_string(),
-            ) {
+            let message = match CString::new(payload.params.to_string()) {
                 Ok(message) => message,
                 Err(error) => {
                     error!("Failed to create message: {error}");

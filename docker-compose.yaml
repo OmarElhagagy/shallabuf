@@ -14,7 +14,8 @@ services:
     image: nats:latest
     ports:
       - "4222:4222" # Client Port
-    command: ["-js"]
+      - "8222:8222" # Monitoring Port
+    command: ["-js", "-m", "8222"]
 
   minio:
     image: minio/minio:latest
@@ -37,6 +38,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+      args:
+        BUILD_MODE: debug
     ports:
       - "8000:8000"
     env_file:
@@ -46,27 +49,64 @@ services:
       - nats
       - minio
       - scheduler
+    develop:
+      watch:
+        - action: rebuild
+          path: ./api
+          target: /app
 
   scheduler:
     build:
       context: .
       dockerfile: Dockerfile.scheduler
+      args:
+        BUILD_MODE: debug
     env_file:
       - .env.docker
     depends_on:
       - postgres
       - nats
       - worker
+    develop:
+      watch:
+        - action: rebuild
+          path: ./scheduler
+          target: /app
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      args:
+        BUILD_MODE: debug
     env_file:
       - .env.docker
     depends_on:
       - postgres
       - nats
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./web/.env
+    depends_on:
+      - api
+    develop:
+      watch:
+        - action: sync
+          path: ./web
+          target: /app
+          ignore:
+            - node_modules
+            - .next
+        - action: rebuild
+          path: ./web/package.json
+        - action: rebuild
+          path: ./web/.env
 
 volumes:
   postgres_data:

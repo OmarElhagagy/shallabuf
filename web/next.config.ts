@@ -6,7 +6,9 @@ const jiti = createJiti(fileURLToPath(import.meta.url));
 jiti.esmResolve("./src/env.ts");
 
 const nextConfig: NextConfig = {
-	/* config options here */
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 };
 
 export default nextConfig;

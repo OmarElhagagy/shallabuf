@@ -18,6 +18,11 @@ DROP TRIGGER IF EXISTS set_updated_at_pipeline_nodes ON pipeline_nodes;
 DROP TRIGGER IF EXISTS set_updated_at_pipeline_node_connections ON pipeline_node_connections;
 DROP TRIGGER IF EXISTS set_updated_at_pipeline_node_outputs ON pipeline_node_outputs;
 DROP TRIGGER IF EXISTS set_updated_at_pipeline_node_inputs ON pipeline_node_inputs;
+DROP TRIGGER IF EXISTS notify_pipeline_execs_update ON pipeline_execs;
+DROP TRIGGER IF EXISTS notify_pipeline_node_execs_update ON pipeline_node_execs;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS notify_pipeline_exec_events();
 
 -- Drop tables
 DROP TABLE IF EXISTS pipeline_node_connections CASCADE;

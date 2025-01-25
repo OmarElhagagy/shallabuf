@@ -8,29 +8,29 @@ export type WsStoreApi = ReturnType<typeof createWsStore>;
 export const WsStoreContext = createContext<WsStoreApi | null>(null);
 
 export interface WsStoreProviderProps {
-	children: React.ReactNode;
+  children: React.ReactNode;
 }
 
 export const WsStoreProvider = ({ children }: WsStoreProviderProps) => {
-	const storeRef = useRef<WsStoreApi | null>(null);
+  const storeRef = useRef<WsStoreApi | null>(null);
 
-	if (!storeRef.current) {
-		storeRef.current = createWsStore();
-	}
+  if (!storeRef.current) {
+    storeRef.current = createWsStore();
+  }
 
-	return (
-		<WsStoreContext.Provider value={storeRef.current}>
-			{children}
-		</WsStoreContext.Provider>
-	);
+  return (
+    <WsStoreContext.Provider value={storeRef.current}>
+      {children}
+    </WsStoreContext.Provider>
+  );
 };
 
 export const useWsStore = <T,>(selector: (store: WsStore) => T): T => {
-	const store = useContext(WsStoreContext);
+  const store = useContext(WsStoreContext);
 
-	if (!store) {
-		throw new Error("useWsStore must be used within a WsStoreProvider");
-	}
+  if (!store) {
+    throw new Error("useWsStore must be used within a WsStoreProvider");
+  }
 
-	return useStore(store, selector);
+  return useStore(store, selector);
 };

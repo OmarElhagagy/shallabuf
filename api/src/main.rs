@@ -66,9 +66,9 @@ async fn main() -> io::Result<()> {
         .await
         .expect("Failed to connect to NATS");
 
-    let jetstream = jetstream::new(nats_client);
+    let jetstream = jetstream::new(nats_client.clone());
 
-    jetstream
+    let stream = jetstream
         .get_or_create_stream(jetstream::stream::Config {
             name: JETSTREAM_NAME.to_string(),
             retention: jetstream::stream::RetentionPolicy::WorkQueue,
@@ -77,6 +77,18 @@ async fn main() -> io::Result<()> {
         })
         .await
         .expect("Failed to get or create JetStream");
+
+    let consumer = stream
+        .get_or_create_consumer(
+            "pipeline-exec-events",
+            jetstream::consumer::pull::Config {
+                durable_name: "pipeline-exec-events".to_string().into(),
+                filter_subject: "pipeline.exec.events>".to_string(),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("Failed to get or create JetStream consumer");
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pg_pool = PgPoolOptions::new()
@@ -101,6 +113,7 @@ async fn main() -> io::Result<()> {
         db: pg_pool,
         redis: redis_connection_manager,
         jetstream,
+        jetstream_consumer: consumer,
         broadcast: Broadcast(tx),
     };
 
@@ -136,6 +149,10 @@ async fn main() -> io::Result<()> {
         .route(
             "/api/v0/pipeline-node-connections",
             post(routes::api::v0::pipeline_node_connections::create),
+        )
+        .route(
+            "/api/v0/pipeline-execs/:id",
+            get(routes::api::v0::pipeline_execs::subscribe),
         )
         .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
         .with_state(app_state)

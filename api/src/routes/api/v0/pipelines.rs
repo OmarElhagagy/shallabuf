@@ -335,6 +335,7 @@ pub async fn details(
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineTriggerResponse {
     pipeline_exec_id: Uuid,
 }
@@ -378,6 +379,6 @@ pub async fn trigger(
         .map_err(internal_error)?;
 
     Ok(Json(PipelineTriggerResponse {
-        pipeline_exec_id: Uuid::new_v4(),
+        pipeline_exec_id: pipeline_exec.id,
     }))
 }

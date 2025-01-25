@@ -3,7 +3,7 @@ use dotenvy::dotenv;
 use futures::StreamExt;
 use petgraph::graph::DiGraph;
 use pipeline_run::PipelineRun;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgListener, PgPoolOptions};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::signal::ctrl_c;
@@ -39,6 +39,40 @@ async fn main() -> Result<(), async_nats::Error> {
         .expect("Failed to connect to database");
 
     let runs = Arc::new(RwLock::new(HashMap::<Uuid, PipelineRun>::new()));
+
+    let nats_client_clone = nats_client.clone();
+
+    // Transmit PostgreSQL notifications to NATS
+    tokio::spawn(async move {
+        let nats_client = nats_client_clone;
+
+        let mut listener = match PgListener::connect(&database_url).await {
+            Ok(listener) => listener,
+            Err(error) => {
+                error!("Failed to connect to Postgres: {error:?}");
+                return;
+            }
+        };
+
+        while let Ok(Some(notification)) = listener.try_recv().await {
+            let payload = match serde_json::to_string(&notification.payload()) {
+                Ok(payload) => payload,
+                Err(error) => {
+                    error!("Failed to serialize notification: {error:?}");
+                    continue;
+                }
+            };
+
+            if let Err(error) = nats_client
+                .publish("pipeline.exec.events", payload.into())
+                .await
+            {
+                error!("Failed to publish message to JetStream: {error:?}");
+            } else {
+                info!("Published message to JetStream for notification: {notification:?}");
+            }
+        }
+    });
 
     // --- Pipeline execution ---
     let nats_client_clone = nats_client.clone();
