@@ -3,9 +3,9 @@ use dotenvy::dotenv;
 use futures::StreamExt;
 use petgraph::graph::DiGraph;
 use pipeline_run::PipelineRun;
-use sqlx::postgres::{PgListener, PgPoolOptions};
-use std::collections::HashMap;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
+use std::{collections::HashMap, env, process};
 use tokio::signal::ctrl_c;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -22,9 +22,25 @@ async fn main() -> Result<(), async_nats::Error> {
     let filter_layer = EnvFilter::from_default_env();
     let fmt_layer = fmt::layer().with_target(false).with_line_number(true);
 
+    let (loki_layer, loki_task) = tracing_loki::builder()
+        .label("host", "mine")
+        .expect("Failed to create Loki layer")
+        .extra_field("pid", format!("{}", process::id()))
+        .expect("Failed to add extra field to Loki layer")
+        .build_url(
+            env::var("LOKI_URL")
+                .expect("LOKI_URL must be set")
+                .parse()
+                .expect("Failed to parse Loki URL"),
+        )
+        .expect("Failed to build Loki layer");
+
+    tokio::spawn(loki_task);
+
     tracing_subscriber::registry()
         .with(filter_layer)
         .with(fmt_layer)
+        .with(loki_layer)
         .init();
 
     let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
@@ -39,40 +55,6 @@ async fn main() -> Result<(), async_nats::Error> {
         .expect("Failed to connect to database");
 
     let runs = Arc::new(RwLock::new(HashMap::<Uuid, PipelineRun>::new()));
-
-    let nats_client_clone = nats_client.clone();
-
-    // Transmit PostgreSQL notifications to NATS
-    tokio::spawn(async move {
-        let nats_client = nats_client_clone;
-
-        let mut listener = match PgListener::connect(&database_url).await {
-            Ok(listener) => listener,
-            Err(error) => {
-                error!("Failed to connect to Postgres: {error:?}");
-                return;
-            }
-        };
-
-        while let Ok(Some(notification)) = listener.try_recv().await {
-            let payload = match serde_json::to_string(&notification.payload()) {
-                Ok(payload) => payload,
-                Err(error) => {
-                    error!("Failed to serialize notification: {error:?}");
-                    continue;
-                }
-            };
-
-            if let Err(error) = nats_client
-                .publish("pipeline.exec.events", payload.into())
-                .await
-            {
-                error!("Failed to publish message to JetStream: {error:?}");
-            } else {
-                info!("Published message to JetStream for notification: {notification:?}");
-            }
-        }
-    });
 
     // --- Pipeline execution ---
     let nats_client_clone = nats_client.clone();
@@ -459,7 +441,7 @@ async fn main() -> Result<(), async_nats::Error> {
                 error!("Failed to publish message to JetStream: {error:?}");
             } else {
                 info!(
-                    "Published message to JetStream for pipeline_exec_id: {}",
+                    "Published message to JetStream under pipeline.plan subject for pipeline_exec_id: {}",
                     payload.pipeline_exec_id
                 );
             }

@@ -1,3 +1,4 @@
+use async_nats::Subscriber;
 use axum::{
     async_trait,
     extract::{FromRef, FromRequestParts},
@@ -5,18 +6,17 @@ use axum::{
 };
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
-use tokio::sync::broadcast;
+use std::{fmt::Debug, sync::Arc};
+use tokio::sync::{broadcast, Mutex};
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
-    pub jetstream_consumer:
-        async_nats::jetstream::consumer::Consumer<async_nats::jetstream::consumer::pull::Config>,
     pub jetstream: async_nats::jetstream::Context,
     pub broadcast: Broadcast,
     pub redis: redis::aio::ConnectionManager,
+    pub subscriber: Arc<Mutex<Subscriber>>,
 }
 
 pub struct DatabaseConnection(pub sqlx::pool::PoolConnection<sqlx::Postgres>);
@@ -204,12 +204,10 @@ where
     }
 }
 
-pub struct JetStreamConsumer(
-    pub async_nats::jetstream::consumer::Consumer<async_nats::jetstream::consumer::pull::Config>,
-);
+pub struct NatsSubscriber(pub Arc<Mutex<Subscriber>>);
 
 #[async_trait]
-impl<S> FromRequestParts<S> for JetStreamConsumer
+impl<S> FromRequestParts<S> for NatsSubscriber
 where
     AppState: FromRef<S>,
     S: Send + Sync,
@@ -218,6 +216,6 @@ where
 
     async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        Ok(Self(state.jetstream_consumer.clone()))
+        Ok(Self(state.subscriber.clone()))
     }
 }

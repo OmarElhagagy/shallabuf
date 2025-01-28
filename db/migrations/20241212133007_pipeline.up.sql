@@ -14,8 +14,8 @@ CREATE TABLE IF NOT EXISTS templates (
     description VARCHAR,
     config JSON NOT NULL,
     visibility visibility NOT NULL DEFAULT 'public',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create 'pipelines' table
@@ -25,8 +25,8 @@ CREATE TABLE IF NOT EXISTS pipelines (
     description VARCHAR,
     from_template_id UUID,
     team_id UUID NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (from_template_id) REFERENCES templates(id) ON DELETE SET NULL,
     FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE RESTRICT
 );
@@ -37,8 +37,8 @@ CREATE TABLE IF NOT EXISTS pipeline_triggers (
     pipeline_id UUID NOT NULL,
     coords JSONB NOT NULL,
     config JSON NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 );
 
@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     container_type node_container_type NOT NULL,
     tags TEXT[] NOT NULL DEFAULT '{}',
     visibility visibility NOT NULL DEFAULT 'public',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (identifier_name, publisher_name, version)
 );
 
@@ -64,9 +64,9 @@ CREATE TABLE IF NOT EXISTS pipeline_execs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     pipeline_id UUID NOT NULL,
     status exec_status NOT NULL DEFAULT 'pending',
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP WITH TIME ZONE,
+    finished_at TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
 );
 
@@ -78,8 +78,8 @@ CREATE TABLE IF NOT EXISTS pipeline_nodes (
     node_version VARCHAR NOT NULL,
     coords JSONB NOT NULL,
     trigger_id UUID,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE,
     FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE,
     FOREIGN KEY (trigger_id) REFERENCES pipeline_triggers(id) ON DELETE SET NULL
@@ -92,9 +92,9 @@ CREATE TABLE IF NOT EXISTS pipeline_node_execs (
     pipeline_node_id UUID NOT NULL,
     status exec_status NOT NULL DEFAULT 'pending',
     result JSON,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    started_at TIMESTAMP,
-    finished_at TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    started_at TIMESTAMP WITH TIME ZONE,
+    finished_at TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (pipeline_execs_id) REFERENCES pipeline_execs(id) ON DELETE CASCADE,
     FOREIGN KEY (pipeline_node_id) REFERENCES pipeline_nodes(id) ON DELETE CASCADE
 );
@@ -104,8 +104,8 @@ CREATE TABLE IF NOT EXISTS pipeline_node_outputs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     key VARCHAR NOT NULL,
     pipeline_node_id UUID NOT NULL REFERENCES pipeline_nodes(id) ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create 'pipeline_node_inputs' table
@@ -113,8 +113,8 @@ CREATE TABLE IF NOT EXISTS pipeline_node_inputs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     key VARCHAR NOT NULL,
     pipeline_node_id UUID NOT NULL REFERENCES pipeline_nodes(id) ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create 'pipeline_node_connections' table
@@ -122,8 +122,8 @@ CREATE TABLE IF NOT EXISTS pipeline_node_connections (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     from_pipeline_node_output_id UUID NOT NULL REFERENCES pipeline_node_outputs(id) ON DELETE CASCADE,
     to_pipeline_node_input_id UUID NOT NULL REFERENCES pipeline_node_inputs(id) ON DELETE CASCADE,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create indexes

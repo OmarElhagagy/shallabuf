@@ -1,33 +1,50 @@
-use std::convert::Infallible;
-
 use axum::response::Sse;
 use axum::{extract::Path, response::sse::Event};
-use futures::stream::{self, Stream};
+use db::dtos::PipelineExec;
+use futures::stream::Stream;
 use futures::StreamExt;
-use hyper::StatusCode;
+use std::error::Error;
+use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::{app_state::JetStreamConsumer, utils::internal_error};
+use crate::app_state::NatsSubscriber;
 
 pub async fn subscribe(
     Path(id): Path<Uuid>,
-    JetStreamConsumer(jetstream_consumer): JetStreamConsumer,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, hyper::StatusCode> {
-    let messages = jetstream_consumer
-        .messages()
-        .await
-        .map_err(internal_error)?;
+    NatsSubscriber(subscriber): NatsSubscriber,
+) -> Result<Sse<impl Stream<Item = Result<Event, Box<dyn Error + Send + Sync>>>>, hyper::StatusCode>
+{
+    debug!("Subscribing to JetStream for pipeline exec {id}");
 
-    let stream = messages.map(|message_result| {
-        let message = message_result.unwrap_or_else(|_| {
-            panic!("Failed to receive message from JetStream");
-        });
+    let stream = async_stream::stream! {
+        let mut subscriber = subscriber.lock().await;
 
-        let data = String::from_utf8(message.payload.to_vec())
-            .unwrap_or_else(|_| String::from("Invalid UTF-8"));
+        while let Some(message) = subscriber.next().await {
+            let message_str = String::from_utf8_lossy(&message.payload);
+            debug!("Received message: {message_str}");
 
-        Ok(Event::default().data(data))
-    });
+            match serde_json::from_str::<PipelineExec>(&message_str) {
+                Ok(exec) => {
+                    if exec.id == id {
+                        match serde_json::to_string::<PipelineExec>(&exec) {
+                            Ok(exec) => {
+                                info!("Received message for pipeline exec {id}: {exec}");
+                                yield Ok(Event::default().data(exec));
+                            }
+                            Err(error) => {
+                                debug!("Failed to parse message: {error}");
+                            }
+                        }
+                    } else {
+                        debug!("Received message for different pipeline exec, {exec:?}");
+                    }
+                }
+                Err(error) => {
+                    debug!("Failed to parse message: {error}");
+                }
+            }
+        }
+    };
 
     Ok(Sse::new(stream))
 }
