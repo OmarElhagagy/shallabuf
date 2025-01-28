@@ -34,6 +34,7 @@ export const TriggerNode = ({
 				<TriggerPipelineDialog
 					pipelineId={data.pipelineId}
 					triggerId={data.id}
+					execStatus={data.execStatus}
 				/>
 			</CardContent>
 		</Card>

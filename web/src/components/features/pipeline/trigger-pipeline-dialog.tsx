@@ -1,7 +1,7 @@
 "use client";
 import { useHandleConnections, useNodesData } from "@xyflow/react";
 import { ClockIcon, Loader, PlayIcon } from "lucide-react";
-import { memo, useCallback, useState } from "react";
+import { type ReactNode, memo, useCallback, useState } from "react";
 import { useForm } from "react-hook-form";
 import { triggerPipelineAction } from "~/actions/trigger-pipeline";
 import type { TaskNodeProps } from "~/app/(protected)/pipelines/[id]/_components/task-node";
@@ -30,6 +30,18 @@ export interface TriggerPipelineDialogProps {
 type TriggerPipelineFormData = {
 	pipelineId: string;
 	inputs: Record<string, Record<string, string>>;
+};
+
+const STATUS_ICONS: Record<ExecStatus, ReactNode> = {
+	pending: <ClockIcon />,
+	running: <Loader />,
+	completed: <PlayIcon />,
+	failed: <PlayIcon />,
+} as const;
+
+const getStatusIcon = (status?: ExecStatus) => {
+	if (!status) return <PlayIcon />;
+	return STATUS_ICONS[status] ?? <PlayIcon />;
 };
 
 export const TriggerPipelineDialog = memo(
@@ -78,12 +90,7 @@ export const TriggerPipelineDialog = memo(
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogTrigger asChild>
 					<Button className="flex items-center justify-center w-full">
-						{execStatus ? (
-							(execStatus === "pending" && <ClockIcon />) ||
-							(execStatus === "running" && <Loader />)
-						) : (
-							<PlayIcon />
-						)}
+						{getStatusIcon(execStatus)}
 					</Button>
 				</DialogTrigger>
 

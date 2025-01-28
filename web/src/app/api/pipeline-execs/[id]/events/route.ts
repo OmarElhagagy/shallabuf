@@ -2,6 +2,10 @@ import { type NextRequest, NextResponse } from "next/server";
 import { env } from "~/env";
 import { getSessionToken } from "~/lib/auth";
 
+export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
+
 export async function GET(
 	_request: NextRequest,
 	{ params }: { params: Promise<{ id: string }> },

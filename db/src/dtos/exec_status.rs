@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(sqlx::Type, Debug, Serialize, Deserialize)]
+#[derive(sqlx::Type, PartialEq, Debug, Serialize, Deserialize)]
 #[sqlx(type_name = "exec_status", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum ExecStatus {

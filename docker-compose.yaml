@@ -61,7 +61,7 @@ services:
     ports:
       - "3001:3000" # Grafana web interface
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: "admin" # Change password for Grafana
+      GF_SECURITY_ADMIN_PASSWORD: "admin"
     depends_on:
       - prometheus
     networks:

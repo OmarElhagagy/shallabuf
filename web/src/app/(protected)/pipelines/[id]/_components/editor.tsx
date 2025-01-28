@@ -20,6 +20,7 @@ import {
 } from "@xyflow/react";
 import { MousePointer2 } from "lucide-react";
 import { useParams, useSearchParams } from "next/navigation";
+import { useQueryState } from "nuqs";
 import React, {
 	type MouseEvent,
 	useCallback,
@@ -67,8 +68,7 @@ export const Editor = (props: EditorProps) => {
 	const [edges, setEdges, onEdgesChange] = useEdgesState(props.edges);
 	const params = useParams();
 	const pipelineId = params.id as string;
-	const searchParams = useSearchParams();
-	const execId = searchParams.get("exec");
+	const [execId, setExecId] = useQueryState("exec");
 
 	useEffect(() => {
 		if (execId) {
@@ -78,6 +78,7 @@ export const Editor = (props: EditorProps) => {
 
 			eventSource.onmessage = (event) => {
 				const data = JSON.parse(event.data);
+				console.log(data);
 
 				if (isPipelineExec(data)) {
 					setNodes((nodes) => {
@@ -97,16 +98,18 @@ export const Editor = (props: EditorProps) => {
 					});
 
 					if (data.status === "completed" || data.status === "failed") {
+						setExecId(null);
 						eventSource.close();
 					}
 				}
 			};
 
 			eventSource.onerror = (event) => {
+				setExecId(null);
 				console.error(event);
 			};
 		}
-	}, [execId, setNodes]);
+	}, [execId, setNodes, setExecId]);
 
 	const [
 		participants,

@@ -1,6 +1,6 @@
 use axum::response::Sse;
 use axum::{extract::Path, response::sse::Event};
-use db::dtos::PipelineExec;
+use db::dtos::{ExecStatus, PipelineExec};
 use futures::stream::Stream;
 use futures::StreamExt;
 use std::error::Error;
@@ -27,9 +27,14 @@ pub async fn subscribe(
                 Ok(exec) => {
                     if exec.id == id {
                         match serde_json::to_string::<PipelineExec>(&exec) {
-                            Ok(exec) => {
-                                info!("Received message for pipeline exec {id}: {exec}");
-                                yield Ok(Event::default().data(exec));
+                            Ok(exec_str) => {
+                                info!("Received message for pipeline exec {id}: {exec_str}");
+                                yield Ok(Event::default().data(exec_str));
+
+                                if exec.status == ExecStatus::Completed {
+                                    debug!("Pipeline exec {id} completed, closing stream");
+                                    break;
+                                }
                             }
                             Err(error) => {
                                 debug!("Failed to parse message: {error}");
