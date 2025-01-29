@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                    INSERT INTO\n                        pipeline_node_execs (pipeline_exec_id, pipeline_node_id)\n                    SELECT\n                        pipeline_exec_id, pipeline_node_id\n                    FROM\n                        UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_exec_id, pipeline_node_id)\n                    RETURNING\n                        pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "pipeline_node_id",
+        "type_info": "Uuid"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d9c0ec562d83ca8e18d962f7d68d30075f021c01417145e96fa0b729e1d38f43"
+}

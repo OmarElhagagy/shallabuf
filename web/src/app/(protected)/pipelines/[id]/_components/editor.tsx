@@ -19,7 +19,7 @@ import {
 	useReactFlow,
 } from "@xyflow/react";
 import { MousePointer2 } from "lucide-react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQueryState } from "nuqs";
 import React, {
 	type MouseEvent,
@@ -37,14 +37,13 @@ import { updatePipelineTriggerAction } from "~/actions/update-pipeline-trigger";
 import { useWsStore } from "~/contexts/ws-store-context";
 import { env } from "~/env";
 import {
-	type ExecStatus,
 	type Node,
 	NodeType,
+	type PipelineExecNotification,
 	type PipelineNode,
 	type PipelineNodeConnection,
 	type PipelineParticipant,
 } from "~/lib/dtos";
-import { isPipelineExec } from "~/lib/guards";
 import type { WsStoreState } from "~/stores/ws-store";
 import { Dropzone } from "./dropzone";
 import { NodeItem } from "./node-item";
@@ -77,10 +76,9 @@ export const Editor = (props: EditorProps) => {
 			);
 
 			eventSource.onmessage = (event) => {
-				const data = JSON.parse(event.data);
-				console.log(data);
+				const notification: PipelineExecNotification = JSON.parse(event.data);
 
-				if (isPipelineExec(data)) {
+				if (notification.type === "pipeline") {
 					setNodes((nodes) => {
 						return nodes.map((node) => {
 							if (node.type === NodeType.Trigger) {
@@ -88,7 +86,7 @@ export const Editor = (props: EditorProps) => {
 									...node,
 									data: {
 										...node.data,
-										execStatus: data.status,
+										execStatus: notification.data.status,
 									},
 								};
 							}
@@ -97,10 +95,32 @@ export const Editor = (props: EditorProps) => {
 						});
 					});
 
-					if (data.status === "completed" || data.status === "failed") {
+					if (
+						notification.data.status === "completed" ||
+						notification.data.status === "failed"
+					) {
 						setExecId(null);
 						eventSource.close();
 					}
+				}
+
+				if (notification.type === "node") {
+					setNodes((nodes) => {
+						return nodes.map((node) => {
+							if (node.id === notification.data.pipelineNodeId) {
+								return {
+									...node,
+									data: {
+										...node.data,
+										result: notification.data.result,
+										execStatus: notification.data.status,
+									},
+								};
+							}
+
+							return node;
+						});
+					});
 				}
 			};
 

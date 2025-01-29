@@ -1,7 +1,11 @@
 use dotenvy::dotenv;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::ffi::{c_char, CString};
+use std::{
+    env,
+    ffi::{c_char, CString},
+    process,
+};
 use tokio::signal::ctrl_c;
 use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -9,7 +13,7 @@ use uuid::Uuid;
 use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineNodeExecPayload {
     pub pipeline_execs_id: Uuid,
     pub pipeline_node_exec_id: Uuid,
@@ -18,7 +22,7 @@ pub struct PipelineNodeExecPayload {
     pub params: serde_json::Value,
 }
 
-#[derive(sqlx::Type, Serialize, Deserialize, Clone)]
+#[derive(sqlx::Type, Debug, Serialize, Deserialize, Clone)]
 #[sqlx(type_name = "node_container_type", rename_all = "snake_case")]
 pub enum NodeContainerType {
     Docker,
@@ -50,9 +54,25 @@ async fn main() -> Result<(), async_nats::Error> {
     let filter_layer = EnvFilter::from_default_env();
     let fmt_layer = fmt::layer().with_target(false).with_line_number(true);
 
+    let (loki_layer, loki_task) = tracing_loki::builder()
+        .label("host", "mine")
+        .expect("Failed to create Loki layer")
+        .extra_field("pid", format!("{}", process::id()))
+        .expect("Failed to add extra field to Loki layer")
+        .build_url(
+            env::var("LOKI_URL")
+                .expect("LOKI_URL must be set")
+                .parse()
+                .expect("Failed to parse Loki URL"),
+        )
+        .expect("Failed to build Loki layer");
+
+    tokio::spawn(loki_task);
+
     tracing_subscriber::registry()
         .with(filter_layer)
         .with(fmt_layer)
+        .with(loki_layer)
         .init();
 
     let nats_url = std::env::var("NATS_URL").expect("NATS_URL must be set");
@@ -92,6 +112,8 @@ async fn main() -> Result<(), async_nats::Error> {
                     continue;
                 }
             };
+
+            debug!("payload from worker {payload:?}");
 
             let mut config = Config::new();
             config.async_support(true);
@@ -160,6 +182,12 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             };
 
+            debug!(
+                "payload params: {} as string {}",
+                payload.params,
+                payload.params.to_string()
+            );
+
             let message = match CString::new(payload.params.to_string()) {
                 Ok(message) => message,
                 Err(error) => {
@@ -167,6 +195,11 @@ async fn main() -> Result<(), async_nats::Error> {
                     continue;
                 }
             };
+
+            debug!(
+                "Pipeline node exec {} started with message: {message:?}",
+                payload.pipeline_node_exec_id
+            );
 
             let required_size = message.as_bytes_with_nul().len() as u64;
             let current_size = memory.data_size(&store) as u64;
@@ -229,6 +262,11 @@ async fn main() -> Result<(), async_nats::Error> {
                     continue;
                 }
             };
+
+            debug!(
+                "Pipeline node exec {} completed with result: {result}",
+                payload.pipeline_node_exec_id
+            );
 
             let result = match serde_json::from_str(&result) {
                 Ok(result) => result,

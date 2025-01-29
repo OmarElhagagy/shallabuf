@@ -88,14 +88,14 @@ CREATE TABLE IF NOT EXISTS pipeline_nodes (
 -- Create 'pipeline_node_execs' table
 CREATE TABLE IF NOT EXISTS pipeline_node_execs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    pipeline_execs_id UUID NOT NULL,
+    pipeline_exec_id UUID NOT NULL,
     pipeline_node_id UUID NOT NULL,
     status exec_status NOT NULL DEFAULT 'pending',
     result JSON,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     started_at TIMESTAMP WITH TIME ZONE,
     finished_at TIMESTAMP WITH TIME ZONE,
-    FOREIGN KEY (pipeline_execs_id) REFERENCES pipeline_execs(id) ON DELETE CASCADE,
+    FOREIGN KEY (pipeline_exec_id) REFERENCES pipeline_execs(id) ON DELETE CASCADE,
     FOREIGN KEY (pipeline_node_id) REFERENCES pipeline_nodes(id) ON DELETE CASCADE
 );
 

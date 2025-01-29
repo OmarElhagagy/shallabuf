@@ -3,6 +3,8 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
+use serde_json::Value;
+
 #[no_mangle]
 /// # Safety
 /// The caller must ensure that `input_ptr` is a valid pointer to a null-terminated string.
@@ -17,12 +19,19 @@ pub unsafe extern "C" fn run(input_ptr: *const c_char) -> *const c_char {
 
     let input = CStr::from_ptr(input_ptr);
 
-    let echoed_str = match input.to_str() {
-        Ok(s) => s.to_string(),
-        Err(_) => return std::ptr::null(),
+    let Ok(json_str) = input.to_str() else {
+        return std::ptr::null();
     };
 
-    match CString::new(echoed_str) {
+    let Ok(parsed) = serde_json::from_str::<Value>(json_str) else {
+        return std::ptr::null();
+    };
+
+    let Some(message) = parsed.get("message") else {
+        return std::ptr::null();
+    };
+
+    match CString::new(message.to_string()) {
         Ok(data) => data.into_raw(),
         Err(_) => std::ptr::null(),
     }

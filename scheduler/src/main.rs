@@ -163,11 +163,11 @@ async fn main() -> Result<(), async_nats::Error> {
             match sqlx::query!(
                 r#"
                     INSERT INTO
-                        pipeline_node_execs (pipeline_execs_id, pipeline_node_id)
+                        pipeline_node_execs (pipeline_exec_id, pipeline_node_id)
                     SELECT
-                        pipeline_execs_id, pipeline_node_id
+                        pipeline_exec_id, pipeline_node_id
                     FROM
-                        UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_execs_id, pipeline_node_id)
+                        UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_exec_id, pipeline_node_id)
                     RETURNING
                         pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id
                 "#,

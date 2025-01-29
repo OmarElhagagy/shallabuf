@@ -131,6 +131,8 @@ export type TaskNodeConfig = TaskNodeConfigV0;
 
 export type ExecStatus = "pending" | "running" | "completed" | "failed";
 
+export type PipelineExecNotificationType = "pipeline" | "node";
+
 export interface PipelineExec {
 	id: string;
 	pipelineId: string;
@@ -139,3 +141,24 @@ export interface PipelineExec {
 	startedAt: Date;
 	finishedAt: Date;
 }
+
+export interface PipelineExecNode {
+	id: string;
+	pipelineExecId: string;
+	pipelineNodeId: string;
+	status: ExecStatus;
+	result: Record<string, unknown>;
+	createdAt: Date;
+	startedAt: Date;
+	finishedAt: Date;
+}
+
+export type PipelineExecNotification =
+	| {
+			type: "pipeline";
+			data: PipelineExec;
+	  }
+	| {
+			type: "node";
+			data: PipelineExecNode;
+	  };

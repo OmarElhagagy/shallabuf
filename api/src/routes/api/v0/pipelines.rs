@@ -362,7 +362,7 @@ pub async fn trigger(
     .map_err(internal_error)?;
 
     info!(
-        "Pipeline execution record created with id: {}",
+        "Pipeline execution record created with id: {} and params: {params:?}",
         pipeline_exec.id
     );
 

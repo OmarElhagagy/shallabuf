@@ -55,23 +55,27 @@ export const TriggerPipelineDialog = memo(
 			connections.map((connection) => connection.target),
 		);
 
+		const defaultValues = {
+			pipelineId,
+			inputs: connectedNodesData.reduce(
+				(acc, { id, data }) =>
+					Object.assign(acc, {
+						[id]: data.config?.inputs.reduce(
+							(acc, { key, input }) =>
+								Object.assign(acc, {
+									[key]: getDefaultFromTaskNodeConfigV0Input(input),
+								}),
+							{},
+						),
+					}),
+				{},
+			),
+		};
+
+		console.log("trigger form default values", defaultValues);
+
 		const form = useForm<TriggerPipelineFormData>({
-			defaultValues: {
-				pipelineId,
-				inputs: connectedNodesData.reduce(
-					(acc, { id, data }) =>
-						Object.assign(acc, {
-							[id]: data.config?.inputs.reduce(
-								(acc, { key, input }) =>
-									Object.assign(acc, {
-										[key]: getDefaultFromTaskNodeConfigV0Input(input),
-									}),
-								{},
-							),
-						}),
-					{},
-				),
-			},
+			defaultValues,
 		});
 
 		const [open, setOpen] = useState(false);
@@ -81,6 +85,7 @@ export const TriggerPipelineDialog = memo(
 			const formData = new FormData();
 
 			formData.append("pipelineId", values.pipelineId);
+			console.log("inputs", values);
 			formData.append("inputs", JSON.stringify(values.inputs));
 
 			await triggerPipelineAction(formData);
@@ -90,7 +95,11 @@ export const TriggerPipelineDialog = memo(
 			<Dialog open={open} onOpenChange={setOpen}>
 				<DialogTrigger asChild>
 					<Button className="flex items-center justify-center w-full">
-						{getStatusIcon(execStatus)}
+						{execStatus === "pending" && <ClockIcon />}
+						{execStatus === "running" && <Loader />}
+						{["completed", "failed"].includes(execStatus ?? "completed") && (
+							<PlayIcon />
+						)}
 					</Button>
 				</DialogTrigger>
 
