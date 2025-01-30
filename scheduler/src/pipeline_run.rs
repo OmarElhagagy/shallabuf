@@ -2,6 +2,7 @@ use db::dtos;
 use petgraph::graph::DiGraph;
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
+use tracing::debug;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -63,7 +64,14 @@ impl PipelineRun {
                 // Either should be a root node (a node without parents) and not executed yet
                 // Or one of the children with parents which has results (means already executed)
                 if is_root_node || all_parents_have_result {
-                    self.payloads.get(&pipeline_node_id).cloned()
+                    let payload = self.payloads.get(&pipeline_node_id).cloned();
+
+                    debug!("Next node to execute: {:?}", payload);
+                    debug!("Current results: {:?}", self.nodes_exec_results);
+                    debug!("Graph: {:?}", self.graph);
+                    debug!("Pipeline node id: {:?}", pipeline_node_id);
+
+                    payload
                 } else {
                     None
                 }

@@ -218,10 +218,16 @@ export const Editor = (props: EditorProps) => {
 					);
 				});
 			} else {
+				console.log(params);
+
+				if (!params.sourceHandle || !params.targetHandle) {
+					return;
+				}
+
 				const connection: PipelineNodeConnection =
 					await createPipelineNodeConnectionAction({
-						fromNodeId: params.source,
-						toNodeId: params.target,
+						fromPipelineNodeOutputId: params.sourceHandle,
+						toPipelineNodeInputId: params.targetHandle,
 					});
 
 				setEdges((eds) => {
@@ -339,6 +345,8 @@ export const Editor = (props: EditorProps) => {
 				y: 25,
 			},
 		});
+
+		console.log(pipelineNode);
 
 		const node = props.availableNodes.find(
 			(node) => node.id === pipelineNode.nodeId,

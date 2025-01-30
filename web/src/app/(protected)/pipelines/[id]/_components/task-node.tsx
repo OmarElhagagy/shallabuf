@@ -26,8 +26,6 @@ export type TaskNodeProps = Node<
 >;
 
 export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
-	console.log(data.result);
-
 	return (
 		<Card>
 			<CardHeader>
@@ -74,8 +72,6 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 						className="relative flex items-center [&:not(:first-child)]:mt-2"
 					>
 						<Label>{label.en}</Label>
-
-						{JSON.stringify(data.result)}
 
 						{output === "text" && <TextIcon className="ml-auto" />}
 						{output === "status" && <CheckIcon className="ml-auto" />}

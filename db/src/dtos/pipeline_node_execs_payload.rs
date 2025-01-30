@@ -21,7 +21,7 @@ use super::NodeContainerType;
 //     }
 // }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineNodeExecPayload {
     pub pipeline_execs_id: Uuid,
     pub pipeline_node_exec_id: Uuid,

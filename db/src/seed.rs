@@ -431,26 +431,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    let _echo_pipeline_node_input_message = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        echo_pipeline_node.id,
-        echo_node_config["inputs"][0]["key"].as_str().unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
     let echo_pipeline_node_output_echoed = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        echo_pipeline_node.id,
-        echo_node_config["outputs"][0]["key"].as_str().unwrap(),
+        echo_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -474,42 +460,20 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let transform_pipeline_node_input_message = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1
         "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["inputs"][0]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _transform_pipeline_node_input_transformer = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["inputs"][1]["key"]
-            .as_str()
-            .unwrap(),
+        transformer_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
 
     let transform_pipeline_node_output_transformed = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        transformer_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -544,38 +508,20 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let post_to_fb_pipeline_node_input_message = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1 AND key = 'message'
         "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["inputs"][0]["key"].as_str().unwrap(),
+        post_to_fb_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
 
     let post_to_fb_pipeline_node_input_media = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1 AND key = 'media'
         "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["inputs"][1]["key"].as_str().unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _post_to_fb_pipeline_node_output_posted = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        post_to_fb_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -608,44 +554,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    let _image_generator_pipeline_node_input_width = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["inputs"][0]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _image_generator_pipeline_node_input_height = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["inputs"][1]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
     let image_generator_pipeline_node_output_image = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        image_generator_pipeline_node.id
     )
     .fetch_one(db)
     .await?;

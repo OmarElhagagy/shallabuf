@@ -315,7 +315,7 @@ async fn main() -> Result<(), async_nats::Error> {
 
             for payload in nodes_to_be_executed {
                 info!(
-                    "Publishing message to JetStream for pipeline_node_exec_id: {}",
+                    "Publishing message to JetStream for pipeline_node_exec_id: {} with payload: {payload:?}",
                     payload.pipeline_node_exec_id
                 );
 

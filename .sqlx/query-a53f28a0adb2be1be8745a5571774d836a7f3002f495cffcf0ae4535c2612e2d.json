@@ -31,7 +31,7 @@
       {
         "ordinal": 5,
         "name": "trigger_config",
-        "type_info": "Json"
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {

@@ -7,7 +7,7 @@
       "Left": [
         "Uuid",
         "Jsonb",
-        "Json"
+        "Jsonb"
       ]
     },
     "nullable": []

@@ -55,64 +55,54 @@ pub async fn create(
 ) -> Result<Json<PipelineNode>, StatusCode> {
     let coords = serde_json::to_value(payload.coords.clone()).map_err(internal_error)?;
 
-    let nodes = sqlx::query!(
+    let node = sqlx::query!(
         r#"
-        WITH inserted_pipeline_node AS (
-            INSERT INTO
-                pipeline_nodes (pipeline_id, node_id, node_version, coords)
-            VALUES
-                ($1, $2, $3, $4)
-            RETURNING
-                id, node_id, node_version, trigger_id, coords
-        )
-        SELECT
-            pn.id, pn.node_id, pn.node_version, pn.trigger_id, pn.coords,
-            pni.id AS "input_id?", pni.key as "input_key?", pno.id AS "output_id?", pno.key AS "output_key?"
-        FROM
-            inserted_pipeline_node pn
-        LEFT JOIN
-            pipeline_node_inputs pni ON pni.pipeline_node_id = pn.id
-        LEFT JOIN
-            pipeline_node_outputs pno ON pno.pipeline_node_id = pn.id
+        INSERT INTO
+            pipeline_nodes (pipeline_id, node_id, node_version, coords)
+        VALUES
+            ($1, $2, $3, $4)
+        RETURNING id, node_id, node_version, trigger_id, coords
         "#,
         payload.pipeline_id,
         payload.node_id,
         payload.node_version,
         coords
     )
+    .fetch_one(&mut *conn)
+    .await
+    .map_err(internal_error)?;
+
+    let inputs = sqlx::query_as!(
+        Input,
+        r#"
+        SELECT
+            id, key
+        FROM
+            pipeline_node_inputs
+        WHERE
+            pipeline_node_id = $1
+        "#,
+        node.id
+    )
     .fetch_all(&mut *conn)
     .await
     .map_err(internal_error)?;
 
-    let inputs = nodes
-        .iter()
-        .filter_map(|row| {
-            if let (Some(id), Some(key)) = (row.input_id, &row.input_key) {
-                Some(Input {
-                    id,
-                    key: key.clone(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<Input>>();
-
-    let outputs = nodes
-        .iter()
-        .filter_map(|row| {
-            if let (Some(id), Some(key)) = (row.output_id, &row.output_key) {
-                Some(Output {
-                    id,
-                    key: key.clone(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<Output>>();
-
-    let node = nodes.first().ok_or(StatusCode::NOT_FOUND)?;
+    let outputs = sqlx::query_as!(
+        Output,
+        r#"
+        SELECT
+            id, key
+        FROM
+            pipeline_node_outputs
+        WHERE
+            pipeline_node_id = $1
+        "#,
+        node.id
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .map_err(internal_error)?;
 
     Ok(Json(PipelineNode {
         id: node.id,
