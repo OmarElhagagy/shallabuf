@@ -22,7 +22,7 @@ pub async fn list(
                 teams.id, teams.name
             FROM
                 user_teams
-            LEFT JOIN
+            JOIN
                 teams ON user_teams.team_id = teams.id
             WHERE
                 user_teams.user_id = $1

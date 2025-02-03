@@ -7,6 +7,16 @@ pub enum NodeContainerType {
     Wasm,
 }
 
+impl std::fmt::Display for NodeContainerType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            NodeContainerType::Docker => "docker",
+            NodeContainerType::Wasm => "wasm",
+        };
+        write!(f, "{s}")
+    }
+}
+
 impl From<&std::string::String> for NodeContainerType {
     fn from(s: &std::string::String) -> Self {
         match s.as_str() {

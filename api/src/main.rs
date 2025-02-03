@@ -1,20 +1,19 @@
-use std::{env, process, sync::Arc};
-
-use app_state::{AppState, Broadcast, BroadcastEvent};
-use async_nats::{self, jetstream};
+use app_state::{AppState, BroadcastEvent, ExecEventsConsumer, WsMessagesBroadcast};
+use async_nats::{
+    self,
+    jetstream::{self},
+};
 use axum::{
     routing::{get, post},
     Router,
 };
-use db::{dtos::PipelineExec, seed::seed_database};
+use db::seed::seed_database;
 use dotenvy::dotenv;
 use sqlx::postgres::{PgListener, PgPool, PgPoolOptions};
-use tokio::{
-    io,
-    sync::{broadcast, Mutex},
-};
+use std::{env, process};
+use tokio::{io, sync::broadcast};
 use tower_http::cors::CorsLayer;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 
 mod app_state;
@@ -88,9 +87,9 @@ async fn main() -> io::Result<()> {
         .await
         .expect("Failed to connect to NATS");
 
-    let jetstream = jetstream::new(nats_client.clone());
+    let jetstream_actions = jetstream::new(nats_client.clone());
 
-    jetstream
+    jetstream_actions
         .get_or_create_stream(jetstream::stream::Config {
             name: JETSTREAM_NAME.to_string(),
             subjects: vec!["pipeline.>".to_string()],
@@ -99,6 +98,28 @@ async fn main() -> io::Result<()> {
         })
         .await
         .expect("Failed to get or create JetStream");
+
+    let jetstream_events = jetstream::new(nats_client.clone());
+
+    let exec_events_consumer = ExecEventsConsumer(
+        jetstream_events
+            .get_or_create_stream(jetstream::stream::Config {
+                name: "EXEC_EVENTS".to_string(),
+                subjects: vec!["exec.events".to_string()],
+                retention: jetstream::stream::RetentionPolicy::Interest,
+                ..Default::default()
+            })
+            .await
+            .expect("Failed to get or create JetStream")
+            .create_consumer(async_nats::jetstream::consumer::pull::Config {
+                durable_name: "EXEC_EVENTS_CONSUMER".to_string().into(),
+                ack_policy: async_nats::jetstream::consumer::AckPolicy::Explicit,
+                filter_subject: "exec.events".to_string(),
+                ..Default::default()
+            })
+            .await
+            .expect("Failed to create JetStream consumer"),
+    );
 
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let pg_pool = PgPoolOptions::new()
@@ -117,13 +138,12 @@ async fn main() -> io::Result<()> {
         .await
         .expect("Failed to create Redis connection manager");
 
-    let (tx, _rx) = broadcast::channel::<BroadcastEvent>(100);
+    let jetstream_events_clone = jetstream_events.clone();
 
-    let nats_client_clone = nats_client.clone();
-
+    // FIXME: move to separate service
     // Transmit PostgreSQL notifications to NATS
     tokio::spawn(async move {
-        let nats_client = nats_client_clone;
+        let jetstream_events = jetstream_events_clone;
 
         let mut listener = match PgListener::connect(&database_url).await {
             Ok(listener) => listener,
@@ -146,8 +166,8 @@ async fn main() -> io::Result<()> {
         while let Ok(Some(notification)) = listener.try_recv().await {
             let payload = notification.payload().to_string();
 
-            if let Err(error) = nats_client
-                .publish("pipeline.exec.events", payload.into())
+            if let Err(error) = jetstream_events
+                .publish("exec.events", payload.into())
                 .await
             {
                 error!("Failed to publish message to JetStream: {error:?}");
@@ -157,59 +177,52 @@ async fn main() -> io::Result<()> {
         }
     });
 
-    let pipeline_execs_subscriber = Arc::new(Mutex::new(
-        nats_client
-            .subscribe("pipeline.exec.events")
-            .await
-            .expect("Failed to subscribe to pipeline.exec.events"),
-    ));
+    let (tx, _rx) = broadcast::channel::<BroadcastEvent>(100);
+    let ws_messages_broadcast = WsMessagesBroadcast(tx);
 
     let app_state = AppState {
         db: pg_pool,
         redis: redis_connection_manager,
-        jetstream,
-        broadcast: Broadcast(tx),
-        subscriber: pipeline_execs_subscriber,
+        jetstream: jetstream_actions,
+        ws_messages_broadcast,
+        exec_events_consumer,
     };
 
-    let app = Router::new()
-        .route("/api/v0/auth/login", post(routes::api::v0::auth::login))
-        .route("/api/v0/teams", get(routes::api::v0::teams::list))
-        .route("/api/v0/pipelines", get(routes::api::v0::pipelines::list))
+    let api_v0 = Router::new()
+        .route("/auth/login", post(routes::api::v0::auth::login))
+        .route("/teams", get(routes::api::v0::teams::list))
+        .route("/pipelines", get(routes::api::v0::pipelines::list))
+        .route("/pipelines", post(routes::api::v0::pipelines::create))
+        .route("/pipelines/:id", get(routes::api::v0::pipelines::details))
         .route(
-            "/api/v0/pipelines",
-            post(routes::api::v0::pipelines::create),
-        )
-        .route(
-            "/api/v0/pipelines/:id",
-            get(routes::api::v0::pipelines::details),
-        )
-        .route(
-            "/api/v0/trigger/pipelines/:id",
+            "/trigger/pipelines/:id",
             post(routes::api::v0::pipelines::trigger),
         )
         .route(
-            "/api/v0/pipeline-triggers/:id",
+            "/pipeline-triggers/:id",
             post(routes::api::v0::pipeline_triggers::update),
         )
-        .route("/api/v0/nodes", get(routes::api::v0::nodes::list))
+        .route("/nodes", get(routes::api::v0::nodes::list))
         .route(
-            "/api/v0/pipeline-nodes",
+            "/pipeline-nodes",
             post(routes::api::v0::pipeline_nodes::create),
         )
         .route(
-            "/api/v0/pipeline-nodes/:id",
+            "/pipeline-nodes/:id",
             post(routes::api::v0::pipeline_nodes::update),
         )
         .route(
-            "/api/v0/pipeline-node-connections",
+            "/pipeline-node-connections",
             post(routes::api::v0::pipeline_node_connections::create),
         )
         .route(
-            "/api/v0/pipeline-execs/:id",
+            "/pipeline-execs/:id",
             get(routes::api::v0::pipeline_execs::subscribe),
         )
-        .route("/api/v0/ws", get(routes::api::v0::events::ws_events))
+        .route("/ws", get(routes::api::v0::events::ws_events));
+
+    let app = Router::new()
+        .nest("/api/v0", api_v0)
         .with_state(app_state)
         .layer(CorsLayer::permissive());
 

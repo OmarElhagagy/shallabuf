@@ -1,4 +1,3 @@
-use async_nats::Subscriber;
 use axum::{
     async_trait,
     extract::{FromRef, FromRequestParts},
@@ -6,17 +5,17 @@ use axum::{
 };
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Debug, sync::Arc};
-use tokio::sync::{broadcast, Mutex};
+use std::fmt::Debug;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
-    pub jetstream: async_nats::jetstream::Context,
-    pub broadcast: Broadcast,
     pub redis: redis::aio::ConnectionManager,
-    pub subscriber: Arc<Mutex<Subscriber>>,
+    pub jetstream: async_nats::jetstream::Context,
+    pub ws_messages_broadcast: WsMessagesBroadcast,
+    pub exec_events_consumer: ExecEventsConsumer,
 }
 
 pub struct DatabaseConnection(pub sqlx::pool::PoolConnection<sqlx::Postgres>);
@@ -180,11 +179,11 @@ pub enum WsClientAction {
 }
 
 #[derive(Clone)]
-pub struct Broadcast(pub broadcast::Sender<BroadcastEvent>);
+pub struct WsMessagesBroadcast(pub broadcast::Sender<BroadcastEvent>);
 
-impl FromRef<AppState> for Broadcast {
+impl FromRef<AppState> for WsMessagesBroadcast {
     fn from_ref(state: &AppState) -> Self {
-        Self(state.broadcast.0.clone())
+        Self(state.ws_messages_broadcast.0.clone())
     }
 }
 
@@ -204,10 +203,13 @@ where
     }
 }
 
-pub struct NatsSubscriber(pub Arc<Mutex<Subscriber>>);
+#[derive(Clone)]
+pub struct ExecEventsConsumer(
+    pub async_nats::jetstream::consumer::Consumer<async_nats::jetstream::consumer::pull::Config>,
+);
 
 #[async_trait]
-impl<S> FromRequestParts<S> for NatsSubscriber
+impl<S> FromRequestParts<S> for ExecEventsConsumer
 where
     AppState: FromRef<S>,
     S: Send + Sync,
@@ -216,6 +218,6 @@ where
 
     async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
-        Ok(Self(state.subscriber.clone()))
+        Ok(Self(state.exec_events_consumer.0.clone()))
     }
 }

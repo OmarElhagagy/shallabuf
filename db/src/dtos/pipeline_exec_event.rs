@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use super::ExecStatus;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineExec {
     pub id: Uuid,
@@ -19,7 +19,7 @@ pub struct PipelineExec {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PipelineNodeExec {
     pub id: Uuid,
@@ -37,7 +37,7 @@ pub struct PipelineNodeExec {
     pub finished_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "camelCase")]
 pub enum PipelineExecEvent {
     Pipeline(PipelineExec),

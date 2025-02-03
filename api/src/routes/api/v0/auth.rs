@@ -33,7 +33,7 @@ pub async fn login(
             users.id, users.name, users.password_hash
         FROM
             users
-        LEFT JOIN
+        JOIN
             keys ON keys.user_id = users.id
         WHERE
             users.email = $1

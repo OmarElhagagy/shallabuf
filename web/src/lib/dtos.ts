@@ -129,7 +129,12 @@ export interface TaskNodeConfigV0 {
 
 export type TaskNodeConfig = TaskNodeConfigV0;
 
-export type ExecStatus = "pending" | "running" | "completed" | "failed";
+export type ExecStatus =
+	| "pending"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled";
 
 export type PipelineExecNotificationType = "pipeline" | "node";
 

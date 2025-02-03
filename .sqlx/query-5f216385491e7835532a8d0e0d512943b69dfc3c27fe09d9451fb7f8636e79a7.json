@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    pn.id,\n                    pn.node_version,\n                    n.publisher_name,\n                    n.identifier_name,\n                    n.container_type::TEXT AS container_type\n                FROM\n                    pipeline_nodes pn\n                JOIN\n                    nodes n ON pn.node_id = n.id\n                WHERE\n                    pn.pipeline_id = $1\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "node_version",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "publisher_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "identifier_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "container_type",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "5f216385491e7835532a8d0e0d512943b69dfc3c27fe09d9451fb7f8636e79a7"
+}

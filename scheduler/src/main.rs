@@ -2,13 +2,13 @@ use db::dtos::{self, ExecStatus, PipelinePlanPayload};
 use dotenvy::dotenv;
 use futures::StreamExt;
 use petgraph::graph::DiGraph;
-use pipeline_run::PipelineRun;
+use pipeline_run::{GraphEdgeConnection, PipelineRun};
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
 use std::{collections::HashMap, env, process};
 use tokio::signal::ctrl_c;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
@@ -56,7 +56,7 @@ async fn main() -> Result<(), async_nats::Error> {
 
     let runs = Arc::new(RwLock::new(HashMap::<Uuid, PipelineRun>::new()));
 
-    // --- Pipeline execution ---
+    // --- Pipeline start execution ---
     let nats_client_clone = nats_client.clone();
     let runs_clone = Arc::clone(&runs);
     let mut pipeline_execs_subscriber = nats_client_clone.subscribe("pipeline.exec").await?;
@@ -77,13 +77,13 @@ async fn main() -> Result<(), async_nats::Error> {
 
             match sqlx::query!(
                 r#"
-                    UPDATE
-                        pipeline_execs
-                    SET
-                        status = $1,
-                        started_at = NOW()
-                    WHERE
-                        id = $2
+                UPDATE
+                    pipeline_execs
+                SET
+                    status = $1,
+                    started_at = NOW()
+                WHERE
+                    id = $2
                 "#,
                 dtos::ExecStatus::Running as ExecStatus,
                 payload.pipeline_exec_id
@@ -105,28 +105,24 @@ async fn main() -> Result<(), async_nats::Error> {
 
             let pipeline_nodes = match sqlx::query!(
                 r#"
-                    SELECT
-                        pipeline_nodes.id,
-                        pipeline_nodes.node_version,
-                        nodes.publisher_name,
-                        nodes.name,
-                        nodes.container_type::TEXT AS container_type,
-                        pipeline_node_connections.from_pipeline_node_output_id AS "from_pipeline_node_output_id?"
-                    FROM
-                        pipeline_nodes
-                    LEFT JOIN
-                        nodes ON pipeline_nodes.node_id = nodes.id
-                    LEFT JOIN
-                        pipeline_node_connections
-                        ON pipeline_nodes.id = pipeline_node_connections.to_pipeline_node_input_id
-                        OR pipeline_nodes.id = pipeline_node_connections.from_pipeline_node_output_id
-                    WHERE
-                        pipeline_nodes.pipeline_id = $1;
+                SELECT
+                    pn.id,
+                    pn.node_version,
+                    n.publisher_name,
+                    n.identifier_name,
+                    n.container_type::TEXT AS container_type
+                FROM
+                    pipeline_nodes pn
+                JOIN
+                    nodes n ON pn.node_id = n.id
+                WHERE
+                    pn.pipeline_id = $1
                 "#,
                 payload.pipeline_id
             )
             .fetch_all(&pg_pool)
-            .await {
+            .await
+            {
                 Ok(nodes) => nodes,
                 Err(error) => {
                     error!("Failed to fetch pipeline nodes: {error:?}");
@@ -135,25 +131,54 @@ async fn main() -> Result<(), async_nats::Error> {
             };
 
             let mut graph = DiGraph::new();
-            let mut graph_nodes = std::collections::HashMap::new();
+            let mut node_index_map = std::collections::HashMap::new();
+            for pn in &pipeline_nodes {
+                let idx = graph.add_node(pn.id);
+                node_index_map.insert(pn.id, idx);
+            }
+            let node_ids: Vec<Uuid> = pipeline_nodes.iter().map(|pn| pn.id).collect();
 
-            for pipeline_node in &pipeline_nodes {
-                let (node_index, _) = *graph_nodes
-                    .entry(pipeline_node.id)
-                    .or_insert_with(|| (graph.add_node(pipeline_node.id), pipeline_node));
+            let connections = match sqlx::query!(
+                r#"
+                SELECT
+                    pno.pipeline_node_id AS "from_pipeline_node_id!: Uuid",
+                    pno.key AS "from_key",
+                    pni.pipeline_node_id AS "to_pipeline_node_id!: Uuid",
+                    pni.key AS "to_key"
+                FROM
+                    pipeline_node_connections pnc
+                JOIN
+                    pipeline_node_outputs pno ON pno.id = pnc.from_pipeline_node_output_id
+                JOIN
+                    pipeline_node_inputs pni ON pni.id = pnc.to_pipeline_node_input_id
+                WHERE
+                    pno.pipeline_node_id = ANY($1) AND pni.pipeline_node_id = ANY($1)
+                "#,
+                &node_ids
+            )
+            .fetch_all(&pg_pool)
+            .await
+            {
+                Ok(conns) => conns,
+                Err(error) => {
+                    error!("Failed to fetch pipeline node connections: {error:?}");
+                    continue;
+                }
+            };
 
-                if let Some(from_pipeline_node_output_id) =
-                    pipeline_node.from_pipeline_node_output_id
-                {
-                    let (child_index, _) = *graph_nodes
-                        .entry(from_pipeline_node_output_id)
-                        .or_insert_with(|| {
-                            (graph.add_node(from_pipeline_node_output_id), pipeline_node)
-                        });
-
-                    if node_index != child_index {
-                        graph.add_edge(node_index, child_index, ());
-                    }
+            for conn in connections {
+                if let (Some(&from_idx), Some(&to_idx)) = (
+                    node_index_map.get(&conn.from_pipeline_node_id),
+                    node_index_map.get(&conn.to_pipeline_node_id),
+                ) {
+                    graph.add_edge(
+                        from_idx,
+                        to_idx,
+                        GraphEdgeConnection {
+                            source: conn.from_key,
+                            target: conn.to_key,
+                        },
+                    );
                 }
             }
 
@@ -162,24 +187,26 @@ async fn main() -> Result<(), async_nats::Error> {
 
             match sqlx::query!(
                 r#"
-                    INSERT INTO
-                        pipeline_node_execs (pipeline_exec_id, pipeline_node_id)
-                    SELECT
-                        pipeline_exec_id, pipeline_node_id
-                    FROM
-                        UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_exec_id, pipeline_node_id)
-                    RETURNING
-                        pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id
+                INSERT INTO
+                    pipeline_node_execs (pipeline_exec_id, pipeline_node_id)
+                SELECT
+                    pipeline_exec_id, pipeline_node_id
+                FROM
+                    UNNEST($1::uuid[], $2::uuid[]) AS a(pipeline_exec_id, pipeline_node_id)
+                RETURNING
+                    pipeline_node_execs.id, pipeline_node_execs.pipeline_node_id
                 "#,
-                &vec![payload.pipeline_exec_id; graph_nodes.keys().len()] as &[Uuid],
-                &graph_nodes.keys().copied().collect::<Vec<Uuid>>()
+                &vec![payload.pipeline_exec_id; node_index_map.keys().len()] as &[Uuid],
+                &node_index_map.keys().copied().collect::<Vec<Uuid>>()
             )
             .fetch_all(&pg_pool)
             .await
             {
                 Ok(result) => {
                     for row in result {
-                        let Some((_, pipeline_node)) = graph_nodes.get(&row.pipeline_node_id)
+                        let Some(pipeline_node) = pipeline_nodes
+                            .iter()
+                            .find(|pn| pn.id == row.pipeline_node_id)
                         else {
                             error!("Pipeline node not found for ID: {}", row.pipeline_node_id);
                             continue;
@@ -202,7 +229,7 @@ async fn main() -> Result<(), async_nats::Error> {
                                 path: format!(
                                     "{}@{}:{}",
                                     pipeline_node.publisher_name,
-                                    pipeline_node.name,
+                                    pipeline_node.identifier_name,
                                     pipeline_node.node_version
                                 ),
                                 params: payload
@@ -226,6 +253,7 @@ async fn main() -> Result<(), async_nats::Error> {
 
             let nats_payload = match serde_json::to_string(&PipelinePlanPayload {
                 pipeline_exec_id: payload.pipeline_exec_id,
+                pipeline_node_exec_id: None,
             }) {
                 Ok(payload) => payload,
                 Err(error) => {
@@ -278,20 +306,27 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             };
 
-            let nodes_to_be_executed = pipeline_run.next_nodes_to_execute();
+            let next_nodes_to_be_executed =
+                pipeline_run.next_nodes_to_execute(payload.pipeline_node_exec_id);
 
-            if nodes_to_be_executed.is_empty() {
+            debug!(
+                "AWESOME {} --- {}",
+                next_nodes_to_be_executed.is_empty(),
+                pipeline_run.is_finished()
+            );
+
+            if next_nodes_to_be_executed.is_empty() && pipeline_run.is_finished() {
                 info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);
 
                 match sqlx::query!(
                     r#"
-                        UPDATE
-                            pipeline_execs
-                        SET
-                            status = $1,
-                            finished_at = NOW()
-                        WHERE
-                            id = $2;
+                    UPDATE
+                        pipeline_execs
+                    SET
+                        status = $1,
+                        finished_at = NOW()
+                    WHERE
+                        id = $2;
                     "#,
                     dtos::ExecStatus::Completed as ExecStatus,
                     payload.pipeline_exec_id
@@ -313,7 +348,7 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             }
 
-            for payload in nodes_to_be_executed {
+            for payload in next_nodes_to_be_executed {
                 info!(
                     "Publishing message to JetStream for pipeline_node_exec_id: {} with payload: {payload:?}",
                     payload.pipeline_node_exec_id
@@ -321,13 +356,13 @@ async fn main() -> Result<(), async_nats::Error> {
 
                 match sqlx::query!(
                     r#"
-                        UPDATE
-                            pipeline_node_execs
-                        SET
-                            status = $1,
-                            started_at = NOW()
-                        WHERE
-                            id = $2;
+                    UPDATE
+                        pipeline_node_execs
+                    SET
+                        status = $1,
+                        started_at = NOW()
+                    WHERE
+                        id = $2;
                     "#,
                     dtos::ExecStatus::Running as ExecStatus,
                     payload.pipeline_node_exec_id
@@ -374,6 +409,7 @@ async fn main() -> Result<(), async_nats::Error> {
 
     tokio::spawn(async move {
         let pg_pool = pg_pool_clone;
+        let nats_client = nats_client_clone;
 
         while let Some(message) = pipeline_node_exec_result_subscriber.next().await {
             let payload = match serde_json::from_slice::<dtos::PipelineNodeExecResultPayload>(
@@ -397,19 +433,27 @@ async fn main() -> Result<(), async_nats::Error> {
                 continue;
             };
 
+            let (exec_status, exec_result) = match payload.outcome {
+                dtos::ExecutionOutcome::Failure(error) => {
+                    error!("Pipeline node exec failed: {error:?}");
+                    (ExecStatus::Failed, None)
+                }
+                dtos::ExecutionOutcome::Success(result) => (ExecStatus::Completed, Some(result)),
+            };
+
             match sqlx::query!(
                 r#"
-                    UPDATE
-                        pipeline_node_execs
-                    SET
-                        status = $1,
-                        result = $2,
-                        finished_at = NOW()
-                    WHERE
-                        id = $3;
+                UPDATE
+                    pipeline_node_execs
+                SET
+                    status = $1,
+                    result = $2,
+                    finished_at = NOW()
+                WHERE
+                    id = $3;
                 "#,
-                dtos::ExecStatus::Completed as ExecStatus,
-                payload.result,
+                exec_status.clone() as ExecStatus,
+                exec_result,
                 payload.pipeline_node_exec_id
             )
             .execute(&pg_pool)
@@ -422,10 +466,19 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             }
 
-            pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, payload.result);
+            // There's nothing to be executed after a failed node,
+            // All the downstream nodes executions will be cancelled
+            if exec_status == ExecStatus::Failed {
+                continue;
+            }
+
+            if let Some(exec_result) = exec_result {
+                pipeline_run.update_node_exec_result(payload.pipeline_node_exec_id, exec_result);
+            }
 
             let nats_payload = match serde_json::to_string(&PipelinePlanPayload {
                 pipeline_exec_id: payload.pipeline_exec_id,
+                pipeline_node_exec_id: payload.pipeline_node_exec_id.into(),
             }) {
                 Ok(payload) => payload,
                 Err(error) => {
@@ -434,7 +487,7 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            if let Err(error) = nats_client_clone
+            if let Err(error) = nats_client
                 .publish("pipeline.plan", nats_payload.into())
                 .await
             {

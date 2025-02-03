@@ -69,6 +69,25 @@ export const Editor = (props: EditorProps) => {
 	const pipelineId = params.id as string;
 	const [execId, setExecId] = useQueryState("exec");
 
+	const clearTaskNodes = useCallback(() => {
+		setNodes((nodes) => {
+			return nodes.map((node) => {
+				if (node.type === NodeType.Task) {
+					return {
+						...node,
+						data: {
+							...node.data,
+							execStatus: undefined,
+							result: undefined,
+						},
+					};
+				}
+
+				return node;
+			});
+		});
+	}, [setNodes]);
+
 	useEffect(() => {
 		if (execId) {
 			const eventSource = new EventSource(
@@ -97,9 +116,11 @@ export const Editor = (props: EditorProps) => {
 
 					if (
 						notification.data.status === "completed" ||
-						notification.data.status === "failed"
+						notification.data.status === "failed" ||
+						notification.data.status === "cancelled"
 					) {
 						setExecId(null);
+						// clearTaskNodes();
 						eventSource.close();
 					}
 				}
@@ -126,6 +147,7 @@ export const Editor = (props: EditorProps) => {
 
 			eventSource.onerror = (event) => {
 				setExecId(null);
+				// clearTaskNodes();
 				console.error(event);
 			};
 		}

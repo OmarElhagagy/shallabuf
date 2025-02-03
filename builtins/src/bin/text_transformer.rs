@@ -3,7 +3,19 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use serde_json::Value;
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum TransformerVariant {
+    Uppercase,
+    Lowercase,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Payload {
+    message: String,
+    transformer: TransformerVariant,
+}
 
 #[no_mangle]
 /// # Safety
@@ -23,15 +35,18 @@ pub unsafe extern "C" fn run(input_ptr: *const c_char) -> *const c_char {
         return std::ptr::null();
     };
 
-    let Ok(parsed) = serde_json::from_str::<Value>(json_str) else {
+    let Ok(payload) = serde_json::from_str::<Payload>(json_str) else {
         return std::ptr::null();
     };
 
-    let Some(message) = parsed.get("message") else {
-        return std::ptr::null();
+    let message = match payload.transformer {
+        TransformerVariant::Uppercase => payload.message.to_uppercase(),
+        TransformerVariant::Lowercase => payload.message.to_lowercase(),
     };
 
-    match CString::new(serde_json::json!({ "echoed": message }).to_string()) {
+    match CString::new(
+        serde_json::json!({ "transformed": message.to_string().to_uppercase() }).to_string(),
+    ) {
         Ok(data) => data.into_raw(),
         Err(_) => std::ptr::null(),
     }

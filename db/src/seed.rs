@@ -9,6 +9,8 @@ use crate::dtos::{
     KeyProviderType, NodeConfig, NodeConfigV0, NodeContainerType, NodeInput, NodeInputType,
     NodeOutput, NodeOutputType, PipelineTriggerConfig, PipelineTriggerConfigV0, SelectInput,
 };
+use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::types::BucketVersioningStatus;
 use sqlx::PgPool;
 
 /// Seeds the database with initial data.
@@ -19,6 +21,78 @@ use sqlx::PgPool;
 /// or if a json config serialization fails.
 #[allow(clippy::too_many_lines)]
 pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
+    // Setup S3 client
+    let minio_endpoint = std::env::var("MINIO_ENDPOINT").expect("MINIO_ENDPOINT must be set");
+    let minio_access_key = std::env::var("MINIO_ACCESS_KEY").expect("MINIO_ACCESS_KEY must be set");
+    let minio_secret_key = std::env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY must be set");
+
+    let s3_config = aws_sdk_s3::config::Builder::new()
+        .endpoint_url(minio_endpoint)
+        .force_path_style(true)
+        .credentials_provider(aws_sdk_s3::config::Credentials::new(
+            minio_access_key,
+            minio_secret_key,
+            None,
+            None,
+            "",
+        ))
+        .region(aws_sdk_s3::config::Region::new("us-east-1"))
+        .behavior_version_latest()
+        .build();
+
+    let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
+
+    // Check if the bucket exists, and create it if it does not
+    let bucket_name = "builtins";
+    match s3_client.head_bucket().bucket(bucket_name).send().await {
+        Ok(_) => {}
+        Err(ref error) => {
+            if matches!(error, SdkError::ServiceError(ref err) if err.err().is_not_found()) {
+                s3_client.create_bucket().bucket(bucket_name).send().await?;
+
+                // Enable versioning on the bucket
+                s3_client
+                    .put_bucket_versioning()
+                    .bucket(bucket_name)
+                    .versioning_configuration(
+                        aws_sdk_s3::types::VersioningConfiguration::builder()
+                            .status(BucketVersioningStatus::Enabled)
+                            .build(),
+                    )
+                    .send()
+                    .await?;
+            } else {
+                return Err(anyhow::anyhow!(error.to_string()));
+            }
+        }
+    }
+
+    let echo_wasm_path = "./builtins/echo.wasm";
+    let body = tokio::fs::read(echo_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("echo:v1.wasm")
+        .body(body.into())
+        .send()
+        .await?;
+
+    let echo_wasm_id = put_object_output.version_id().unwrap_or_default();
+
+    let echo_wasm_path = "./builtins/text-transformer.wasm";
+    let body = tokio::fs::read(echo_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("text-transformer:v1.wasm")
+        .body(body.into())
+        .send()
+        .await?;
+
+    let text_transform_wasm_id = put_object_output.version_id().unwrap_or_default();
+
     // Define predetermined UUIDs
     let organization_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let team_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap();
@@ -209,16 +283,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let echo_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Echo",
         "echo",
         Some("A simple node that echoes the message it receives.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        echo_node_config
+        echo_node_config,
+        echo_wasm_id
     )
     .fetch_one(db)
     .await?;
@@ -285,16 +360,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let transformer_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
-        "Transformer",
-        "transformer",
+        "Text transformer",
+        "text-transformer",
         Some("A simple node that transforms the message it receives.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        transformer_node_config
+        transformer_node_config,
+        text_transform_wasm_id
     )
     .fetch_one(db)
     .await?;
@@ -343,16 +419,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let image_generator_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Image Generator",
         "image_generator",
         Some("A simple node that generates an image.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        image_generator_node_config
+        image_generator_node_config,
+        "FIXME"
     )
     .fetch_one(db)
     .await?;
@@ -399,16 +476,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let post_to_fb_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Post to Facebook",
         "post_to_fb",
         Some("A simple node that posts to Facebook.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        post_to_fb_node_config
+        post_to_fb_node_config,
+        "FIXME"
     )
     .fetch_one(db)
     .await?;

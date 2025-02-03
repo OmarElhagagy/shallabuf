@@ -2,7 +2,7 @@
 CREATE TYPE visibility AS ENUM ('public', 'private');
 
 -- Create 'exec_status' enum type
-CREATE TYPE exec_status AS ENUM ('pending', 'running', 'completed', 'failed');
+CREATE TYPE exec_status AS ENUM ('pending', 'running', 'completed', 'failed', 'cancelled');
 
 -- Create 'node_container_type' enum type
 CREATE TYPE node_container_type AS ENUM ('wasm', 'docker');
@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS nodes (
     name VARCHAR NOT NULL,
     identifier_name VARCHAR NOT NULL,
     publisher_name VARCHAR NOT NULL,
-    version VARCHAR NOT NULL DEFAULT 'v1',
+    version_name VARCHAR NOT NULL DEFAULT 'v1',
+    version_id VARCHAR NOT NULL,
     description VARCHAR,
     config JSONB NOT NULL,
     container_type node_container_type NOT NULL,
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS nodes (
     visibility visibility NOT NULL DEFAULT 'public',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (identifier_name, publisher_name, version)
+    UNIQUE (identifier_name, publisher_name, version_id)
 );
 
 -- Create 'pipeline_execs' table
@@ -143,7 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_nodes_pipeline_id
     ON pipeline_nodes(pipeline_id);
 
 CREATE INDEX IF NOT EXISTS idx_nodes_name
-    ON nodes(identifier_name, publisher_name, version);
+    ON nodes(identifier_name, publisher_name, version_id);
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_node_inputs_pipeline_node_id
     ON pipeline_node_inputs(pipeline_node_id);

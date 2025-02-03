@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                    UPDATE\n                        pipeline_execs\n                    SET\n                        status = $1,\n                        started_at = NOW()\n                    WHERE\n                        id = $2\n                ",
+  "query": "\n                    UPDATE\n                        pipeline_execs\n                    SET\n                        status = $1,\n                        finished_at = NOW()\n                    WHERE\n                        id = $2;\n                    ",
   "describe": {
     "columns": [],
     "parameters": {
@@ -13,7 +13,8 @@
                 "pending",
                 "running",
                 "completed",
-                "failed"
+                "failed",
+                "cancelled"
               ]
             }
           }
@@ -23,5 +24,5 @@
     },
     "nullable": []
   },
-  "hash": "34f4b0c94060423a44cb9a446893afada3ff8052eb10a3aad94bb99eff677e2b"
+  "hash": "b122b26b54667bfec815a3ef903ef7f238a519af077f76eceefff01d2dea56d3"
 }

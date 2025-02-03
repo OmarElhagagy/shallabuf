@@ -1,6 +1,6 @@
+use db::dtos;
 use dotenvy::dotenv;
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::{
     env,
     ffi::{c_char, CString},
@@ -9,41 +9,32 @@ use std::{
 use tokio::signal::ctrl_c;
 use tracing::{debug, error};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-use uuid::Uuid;
 use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::{preview1::WasiP1Ctx, WasiCtxBuilder};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineNodeExecPayload {
-    pub pipeline_execs_id: Uuid,
-    pub pipeline_node_exec_id: Uuid,
-    pub container_type: NodeContainerType,
-    pub path: String,
-    pub params: serde_json::Value,
-}
-
-#[derive(sqlx::Type, Debug, Serialize, Deserialize, Clone)]
-#[sqlx(type_name = "node_container_type", rename_all = "snake_case")]
-pub enum NodeContainerType {
-    Docker,
-    Wasm,
-}
-
-impl From<&std::string::String> for NodeContainerType {
-    fn from(s: &std::string::String) -> Self {
-        match s.as_str() {
-            "docker" => NodeContainerType::Docker,
-            "wasm" => NodeContainerType::Wasm,
-            _ => panic!("Invalid node container type"),
+async fn publish_exec_result(
+    nats_client: &async_nats::Client,
+    payload: &dtos::PipelineNodeExecResultPayload,
+) {
+    let payload_bytes = match serde_json::to_string(payload) {
+        Ok(payload) => payload.into(),
+        Err(error) => {
+            error!("Failed to serialize payload: {error}");
+            return;
         }
-    }
-}
+    };
 
-#[derive(Serialize, Deserialize)]
-pub struct PipelineNodeExecResultPayload {
-    pub pipeline_exec_id: Uuid,
-    pub pipeline_node_exec_id: Uuid,
-    pub result: serde_json::Value,
+    if let Err(error) = nats_client
+        .publish("pipeline.node.result", payload_bytes)
+        .await
+    {
+        error!("Failed to publish message to JetStream: {error:?}");
+    } else {
+        debug!(
+            "Published message to JetStream for pipeline_node_exec_id {}",
+            payload.pipeline_node_exec_id
+        );
+    }
 }
 
 #[tokio::main]
@@ -104,14 +95,14 @@ async fn main() -> Result<(), async_nats::Error> {
 
     tokio::spawn(async move {
         while let Some(message) = pipeline_node_execs_subscriber.next().await {
-            let payload = match serde_json::from_slice::<PipelineNodeExecPayload>(&message.payload)
-            {
-                Ok(payload) => payload,
-                Err(error) => {
-                    error!("Failed to deserialize message payload: {error:?}");
-                    continue;
-                }
-            };
+            let payload =
+                match serde_json::from_slice::<dtos::PipelineNodeExecPayload>(&message.payload) {
+                    Ok(payload) => payload,
+                    Err(error) => {
+                        error!("Failed to deserialize message payload: {error:?}");
+                        continue;
+                    }
+                };
 
             debug!("payload from worker {payload:?}");
 
@@ -138,10 +129,15 @@ async fn main() -> Result<(), async_nats::Error> {
             let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
             let mut store = Store::new(&engine, wasi);
 
+            let parts = payload.path.split('@').collect::<Vec<&str>>();
+            let bucket_name = parts[0];
+            let object_key = parts[1];
+            let object_extension = payload.container_type;
+
             let s3_object = match s3_client
                 .get_object()
-                .bucket("builtins")
-                .key("echo.wasm")
+                .bucket(bucket_name)
+                .key(format!("{object_key}.{object_extension}"))
                 .send()
                 .await
             {
@@ -240,7 +236,18 @@ async fn main() -> Result<(), async_nats::Error> {
             };
 
             if result_ptr.is_null() {
-                error!("Received invalid pointer from run_fn");
+                publish_exec_result(
+                    &nats_client,
+                    &dtos::PipelineNodeExecResultPayload {
+                        pipeline_exec_id: payload.pipeline_execs_id,
+                        pipeline_node_exec_id: payload.pipeline_node_exec_id,
+                        outcome: dtos::ExecutionOutcome::Failure(
+                            "Received invalid pointer from run_fn".to_string(),
+                        ),
+                    },
+                )
+                .await;
+
                 continue;
             }
 
@@ -268,37 +275,22 @@ async fn main() -> Result<(), async_nats::Error> {
                 payload.pipeline_node_exec_id
             );
 
-            let result = match serde_json::from_str(&result) {
-                Ok(result) => result,
-                Err(error) => {
-                    error!("Failed to deserialize result: {error}");
-                    continue;
+            let outcome = match serde_json::from_str(&result) {
+                Ok(value) => dtos::ExecutionOutcome::Success(value),
+                Err(err) => {
+                    dtos::ExecutionOutcome::Failure(format!("Failed to deserialize result: {err}"))
                 }
             };
 
-            let payload_bytes = match serde_json::to_string(&PipelineNodeExecResultPayload {
-                pipeline_exec_id: payload.pipeline_execs_id,
-                pipeline_node_exec_id: payload.pipeline_node_exec_id,
-                result,
-            }) {
-                Ok(payload) => payload.into(),
-                Err(error) => {
-                    error!("Failed to serialize payload: {error}");
-                    continue;
-                }
-            };
-
-            if let Err(error) = nats_client
-                .publish("pipeline.node.result", payload_bytes)
-                .await
-            {
-                error!("Failed to publish message to JetStream: {error:?}");
-            } else {
-                debug!(
-                    "Published message to JetStream for pipeline_node_exec_id {}",
-                    payload.pipeline_node_exec_id
-                );
-            }
+            publish_exec_result(
+                &nats_client,
+                &dtos::PipelineNodeExecResultPayload {
+                    pipeline_exec_id: payload.pipeline_execs_id,
+                    pipeline_node_exec_id: payload.pipeline_node_exec_id,
+                    outcome,
+                },
+            )
+            .await;
         }
     });
 
