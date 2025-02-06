@@ -27,5 +27,6 @@ dotenvy = "^0.15"
 tower-http = { version = "^0.6", features = ["cors"] }
 argon2 = "^0.5"
 redis = { version = "^0.28", features = ["tokio-comp", "connection-manager"] }
-db = { path = "../db", features = ["seed"] }
 async-stream = "0.3"
+db = { path = "../db", features = ["seed"] }
+event-bridge = { path = "../event-bridge" }

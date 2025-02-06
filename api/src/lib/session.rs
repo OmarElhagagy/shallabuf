@@ -18,7 +18,7 @@ pub struct Session {
 
 pub fn generate_session_token() -> String {
     let mut bytes = [0u8; 20];
-    rand::thread_rng().fill(&mut bytes);
+    rand::rng().fill(&mut bytes);
     base32::encode(base32::Alphabet::Rfc4648 { padding: false }, &bytes).to_lowercase()
 }
 

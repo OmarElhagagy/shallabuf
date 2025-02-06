@@ -9,7 +9,7 @@ use axum::{
 };
 use db::seed::seed_database;
 use dotenvy::dotenv;
-use sqlx::postgres::{PgListener, PgPool, PgPoolOptions};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::{env, process};
 use tokio::{io, sync::broadcast};
 use tower_http::cors::CorsLayer;
@@ -103,12 +103,7 @@ async fn main() -> io::Result<()> {
 
     let exec_events_consumer = ExecEventsConsumer(
         jetstream_events
-            .get_or_create_stream(jetstream::stream::Config {
-                name: "EXEC_EVENTS".to_string(),
-                subjects: vec!["exec.events".to_string()],
-                retention: jetstream::stream::RetentionPolicy::Interest,
-                ..Default::default()
-            })
+            .get_stream(event_bridge::JETSTREAM_NAME.to_string())
             .await
             .expect("Failed to get or create JetStream")
             .create_consumer(async_nats::jetstream::consumer::pull::Config {
@@ -137,45 +132,6 @@ async fn main() -> io::Result<()> {
     let redis_connection_manager = redis::aio::ConnectionManager::new(redis_client)
         .await
         .expect("Failed to create Redis connection manager");
-
-    let jetstream_events_clone = jetstream_events.clone();
-
-    // FIXME: move to separate service
-    // Transmit PostgreSQL notifications to NATS
-    tokio::spawn(async move {
-        let jetstream_events = jetstream_events_clone;
-
-        let mut listener = match PgListener::connect(&database_url).await {
-            Ok(listener) => listener,
-            Err(error) => {
-                error!("Failed to connect to Postgres: {error:?}");
-                return;
-            }
-        };
-
-        match listener.listen("pipeline_execs_events").await {
-            Ok(()) => {
-                info!("Listening for notifications from Postgres");
-            }
-            Err(error) => {
-                error!("Failed to listen for notifications from Postgres: {error:?}");
-                return;
-            }
-        };
-
-        while let Ok(Some(notification)) = listener.try_recv().await {
-            let payload = notification.payload().to_string();
-
-            if let Err(error) = jetstream_events
-                .publish("exec.events", payload.into())
-                .await
-            {
-                error!("Failed to publish message to JetStream: {error:?}");
-            } else {
-                info!("Published message to JetStream for notification: {notification:?}");
-            }
-        }
-    });
 
     let (tx, _rx) = broadcast::channel::<BroadcastEvent>(100);
     let ws_messages_broadcast = WsMessagesBroadcast(tx);
