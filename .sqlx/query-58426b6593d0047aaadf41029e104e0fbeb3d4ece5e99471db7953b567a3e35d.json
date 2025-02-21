@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n                SELECT\n                    pn.id,\n                    pn.node_version,\n                    n.publisher_name,\n                    n.identifier_name,\n                    n.container_type::TEXT AS container_type\n                FROM\n                    pipeline_nodes pn\n                JOIN\n                    nodes n ON pn.node_id = n.id\n                WHERE\n                    pn.pipeline_id = $1\n                ",
+  "query": "\n                SELECT\n                    pn.id,\n                    pn.node_version,\n                    n.publisher_name,\n                    n.identifier_name,\n                    n.config,\n                    n.container_type::TEXT AS container_type\n                FROM\n                    pipeline_nodes pn\n                JOIN\n                    nodes n ON pn.node_id = n.id\n                WHERE\n                    pn.pipeline_id = $1\n                ",
   "describe": {
     "columns": [
       {
@@ -25,6 +25,11 @@
       },
       {
         "ordinal": 4,
+        "name": "config",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
         "name": "container_type",
         "type_info": "Text"
       }
@@ -39,8 +44,9 @@
       false,
       false,
       false,
+      false,
       null
     ]
   },
-  "hash": "5f216385491e7835532a8d0e0d512943b69dfc3c27fe09d9451fb7f8636e79a7"
+  "hash": "58426b6593d0047aaadf41029e104e0fbeb3d4ece5e99471db7953b567a3e35d"
 }

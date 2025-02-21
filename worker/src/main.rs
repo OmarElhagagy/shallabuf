@@ -126,7 +126,11 @@ async fn main() -> Result<(), async_nats::Error> {
                 }
             };
 
-            let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
+            let wasi = WasiCtxBuilder::new()
+                .inherit_stdio()
+                .inherit_network()
+                .build_p1();
+
             let mut store = Store::new(&engine, wasi);
 
             let parts = payload.path.split('@').collect::<Vec<&str>>();

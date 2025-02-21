@@ -94,6 +94,7 @@
 		"typecheck",
 		"UPSTASH",
 		"wasi",
+		"wasmedge",
 		"wasmtime",
 		"xyflow"
 	],

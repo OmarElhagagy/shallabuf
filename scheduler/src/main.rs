@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::{collections::HashMap, env, process};
 use tokio::signal::ctrl_c;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 use uuid::Uuid;
 
@@ -110,6 +110,7 @@ async fn main() -> Result<(), async_nats::Error> {
                     pn.node_version,
                     n.publisher_name,
                     n.identifier_name,
+                    n.config,
                     n.container_type::TEXT AS container_type
                 FROM
                     pipeline_nodes pn
@@ -220,6 +221,52 @@ async fn main() -> Result<(), async_nats::Error> {
                             continue;
                         };
 
+                        // Merge payload params with defaults from node config.
+                        let user_params_value = payload
+                            .params
+                            .get(&row.pipeline_node_id)
+                            .cloned()
+                            .unwrap_or_default();
+
+                        let user_params: std::collections::HashMap<String, String> =
+                            if let serde_json::Value::Object(map) = user_params_value {
+                                map.into_iter()
+                                    .filter_map(|(k, v)| v.as_str().map(|s| (k, s.to_string())))
+                                    .collect()
+                            } else {
+                                std::collections::HashMap::new()
+                            };
+
+                        let default_params: std::collections::HashMap<String, String> =
+                            match serde_json::from_value(pipeline_node.config.clone()) {
+                                Ok(config) => {
+                                    let dtos::NodeConfig::V0(v0) = config;
+                                    let mut defaults = std::collections::HashMap::new();
+
+                                    for input in v0.inputs {
+                                        match input.input {
+                                            dtos::NodeInputType::Text { default }
+                                            | dtos::NodeInputType::Select { default, .. } => {
+                                                if let Some(val) = default {
+                                                    defaults.insert(input.key.clone(), val);
+                                                }
+                                            }
+                                            dtos::NodeInputType::Binary => {}
+                                        }
+                                    }
+
+                                    defaults
+                                }
+                                Err(_) => std::collections::HashMap::new(),
+                            };
+
+                        let mut merged_params = default_params;
+                        merged_params.extend(user_params);
+
+                        // Convert merged parameters to a serde_json::Value.
+                        let merged_params_json =
+                            serde_json::to_value(merged_params).unwrap_or_default();
+
                         pipeline_node_execs_payloads.insert(
                             row.pipeline_node_id,
                             dtos::PipelineNodeExecPayload {
@@ -232,11 +279,7 @@ async fn main() -> Result<(), async_nats::Error> {
                                     pipeline_node.identifier_name,
                                     pipeline_node.node_version
                                 ),
-                                params: payload
-                                    .params
-                                    .get(&row.pipeline_node_id)
-                                    .cloned()
-                                    .unwrap_or_default(),
+                                params: merged_params_json,
                             },
                         );
                     }
@@ -308,12 +351,6 @@ async fn main() -> Result<(), async_nats::Error> {
 
             let next_nodes_to_be_executed =
                 pipeline_run.next_nodes_to_execute(payload.pipeline_node_exec_id);
-
-            debug!(
-                "AWESOME {} --- {}",
-                next_nodes_to_be_executed.is_empty(),
-                pipeline_run.is_finished()
-            );
 
             if next_nodes_to_be_executed.is_empty() && pipeline_run.is_finished() {
                 info!("Pipeline run finished for ID: {}", payload.pipeline_exec_id);

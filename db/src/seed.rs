@@ -68,30 +68,43 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     }
 
     let echo_wasm_path = "./builtins/echo.wasm";
-    let body = tokio::fs::read(echo_wasm_path).await?;
+    let echo_body = tokio::fs::read(echo_wasm_path).await?;
 
     let put_object_output = s3_client
         .put_object()
         .bucket(bucket_name)
         .key("echo:v1.wasm")
-        .body(body.into())
+        .body(echo_body.into())
         .send()
         .await?;
 
     let echo_wasm_id = put_object_output.version_id().unwrap_or_default();
 
-    let echo_wasm_path = "./builtins/text-transformer.wasm";
-    let body = tokio::fs::read(echo_wasm_path).await?;
+    let text_transformer_wasm_path = "./builtins/text-transformer.wasm";
+    let text_transformer_body = tokio::fs::read(text_transformer_wasm_path).await?;
 
     let put_object_output = s3_client
         .put_object()
         .bucket(bucket_name)
         .key("text-transformer:v1.wasm")
-        .body(body.into())
+        .body(text_transformer_body.into())
         .send()
         .await?;
 
     let text_transform_wasm_id = put_object_output.version_id().unwrap_or_default();
+
+    let btc_price_wasm_path = "./builtins/btc-price.wasm";
+    let btc_price_body = tokio::fs::read(btc_price_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("btc-price:v1.wasm")
+        .body(btc_price_body.into())
+        .send()
+        .await?;
+
+    let btc_price_wasm_id = put_object_output.version_id().unwrap_or_default();
 
     // Define predetermined UUIDs
     let organization_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
@@ -376,34 +389,19 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .await?;
 
     let image_generator_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
-        inputs: vec![
-            NodeInput {
-                key: "width".to_string(),
-                input: NodeInputType::Text {
-                    default: Some("800".to_string()),
-                },
-                label: {
-                    let mut map = HashMap::new();
-                    map.insert("en".to_string(), "Width".to_string());
-                    Some(map)
-                },
-                description: None,
-                required: false,
+        inputs: vec![NodeInput {
+            key: "prompt".to_string(),
+            input: NodeInputType::Text {
+                default: Some("The quick brown fox jumps over the lazy dog".to_string()),
             },
-            NodeInput {
-                key: "height".to_string(),
-                input: NodeInputType::Text {
-                    default: Some("600".to_string()),
-                },
-                label: {
-                    let mut map = HashMap::new();
-                    map.insert("en".to_string(), "Height".to_string());
-                    Some(map)
-                },
-                description: None,
-                required: false,
+            label: {
+                let mut map = HashMap::new();
+                map.insert("en".to_string(), "Prompt".to_string());
+                Some(map)
             },
-        ],
+            description: None,
+            required: false,
+        }],
         outputs: vec![NodeOutput {
             key: "image".to_string(),
             output: NodeOutputType::Binary,
@@ -487,6 +485,38 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
         NodeContainerType::Wasm as NodeContainerType,
         post_to_fb_node_config,
         "FIXME"
+    )
+    .fetch_one(db)
+    .await?;
+
+    let btc_price_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
+        inputs: vec![],
+        outputs: vec![NodeOutput {
+            key: "price".to_string(),
+            output: NodeOutputType::Text,
+            label: {
+                let mut map = HashMap::new();
+                map.insert("en".to_string(), "Price".to_string());
+                Some(map)
+            },
+            description: None,
+        }],
+    }))
+    .unwrap();
+
+    let btc_price_node = sqlx::query!(
+        r#"
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+        "#,
+        "BTC Price",
+        "btc-price",
+        Some("A simple node that fetches the current BTC price.".to_string()),
+        "builtins",
+        NodeContainerType::Wasm as NodeContainerType,
+        btc_price_node_config,
+        btc_price_wasm_id
     )
     .fetch_one(db)
     .await?;
