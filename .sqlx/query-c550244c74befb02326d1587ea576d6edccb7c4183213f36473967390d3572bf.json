@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                SELECT\n                    pno.pipeline_node_id AS \"from_pipeline_node_id!: Uuid\",\n                    pno.key AS \"from_key\",\n                    pni.pipeline_node_id AS \"to_pipeline_node_id!: Uuid\",\n                    pni.key AS \"to_key\"\n                FROM\n                    pipeline_node_connections pnc\n                JOIN\n                    pipeline_node_outputs pno ON pno.id = pnc.from_pipeline_node_output_id\n                JOIN\n                    pipeline_node_inputs pni ON pni.id = pnc.to_pipeline_node_input_id\n                WHERE\n                    pno.pipeline_node_id = ANY($1) AND pni.pipeline_node_id = ANY($1)\n                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "from_pipeline_node_id!: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "from_key",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "to_pipeline_node_id!: Uuid",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 3,
+        "name": "to_key",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c550244c74befb02326d1587ea576d6edccb7c4183213f36473967390d3572bf"
+}

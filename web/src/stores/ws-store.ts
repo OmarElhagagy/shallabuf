@@ -213,8 +213,6 @@ export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 				return;
 			}
 
-			console.log("Sending message", message);
-
 			get().ws?.send(JSON.stringify(message));
 		},
 		authenticate: (token) => {
@@ -241,8 +239,6 @@ export const createWsStore = (initState: WsStoreState = defaultInitState) =>
 				};
 
 				ws.onmessage = (event) => {
-					console.log("Received message", event.data);
-
 					const message: WsResActionMessage<WsResActionPayload> = JSON.parse(
 						event.data,
 					);

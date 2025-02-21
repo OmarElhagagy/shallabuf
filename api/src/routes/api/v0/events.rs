@@ -13,11 +13,11 @@ use uuid::Uuid;
 
 use crate::{
     app_state::{
-        AuthStatePayload, Broadcast, BroadcastEvent, BroadcastEventAction,
-        BroadcastEventActionPayload, DatabaseConnection, ExcludePipelineEditorParticipantPayload,
+        AuthStatePayload, BroadcastEvent, BroadcastEventAction, BroadcastEventActionPayload,
+        DatabaseConnection, ExcludePipelineEditorParticipantPayload,
         IncludePipelineEditorParticipantPayload, RedisConnection,
         UpdatePipelineEditorParticipantCursorPositionPayload,
-        UpdatePipelineEditorParticipantNodePositionPayload, WsClientAction,
+        UpdatePipelineEditorParticipantNodePositionPayload, WsClientAction, WsMessagesBroadcast,
     },
     lib::session::validate_session_token,
 };
@@ -26,7 +26,7 @@ pub async fn ws_events(
     ws: WebSocketUpgrade,
     DatabaseConnection(conn): DatabaseConnection,
     RedisConnection(redis): RedisConnection,
-    State(sender): State<Broadcast>,
+    State(sender): State<WsMessagesBroadcast>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws_events(socket, conn, redis, sender.0))
 }
@@ -115,7 +115,6 @@ async fn handle_ws_events(
                                     } else {
                                         warn!("WsAction::UpdateNodePosition: User isn't authenticated");
                                     }
-
                                 }
                                 WsClientAction::EnterPipelineEditor(action) => {
                                     if let Some(user_id) = user_id {

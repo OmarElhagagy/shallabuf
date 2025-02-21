@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                teams.id, teams.name\n            FROM\n                user_teams\n            JOIN\n                teams ON user_teams.team_id = teams.id\n            WHERE\n                user_teams.user_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1eb79199673cdecd01e3f81c09ec15b623299fc69a348a87ee687f8d42953d1d"
+}

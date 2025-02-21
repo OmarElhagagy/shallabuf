@@ -14,16 +14,23 @@ export interface Pipeline {
 	id: string;
 	name: string;
 	description?: string;
+	trigger: {
+		id: string;
+		coords: { x: number; y: number };
+		config: {
+			[key: string]: string;
+		};
+	};
 	nodes: PipelineNode[];
-	connections: PipelineConnection[];
+	connections: PipelineNodeConnection[];
 	participants?: PipelineParticipant[];
 }
 
 export interface PipelineNode {
 	id: string;
-	node_id: string;
-	node_version: string;
-	trigger_id?: string;
+	nodeId: string;
+	nodeVersion: string;
+	triggerId?: string;
 	inputs: { id: string; key: string }[];
 	outputs: { id: string; key: string }[];
 	coords: {
@@ -32,10 +39,10 @@ export interface PipelineNode {
 	};
 }
 
-export interface PipelineConnection {
+export interface PipelineNodeConnection {
 	id: string;
-	to_pipeline_node_input_id: string;
-	from_pipeline_node_output_id: string;
+	toPipelineNodeInputId: string;
+	fromPipelineNodeOutputId: string;
 }
 
 export enum NodeType {
@@ -65,6 +72,20 @@ export type TaskNodeConfigV0Input =
 	| TaskNodeConfigV0InputText
 	| TaskNodeConfigV0InputSelect
 	| "binary";
+
+export const getDefaultFromTaskNodeConfigV0Input = (
+	input: TaskNodeConfigV0Input,
+): string => {
+	if (isTaskNodeConfigV0InputText(input)) {
+		return input.text.default ?? "";
+	}
+
+	if (isTaskNodeConfigV0InputSelect(input)) {
+		return input.select.default ?? "";
+	}
+
+	return "";
+};
 
 export const isTaskNodeConfigV0InputText = (
 	input: TaskNodeConfigV0Input,
@@ -107,3 +128,42 @@ export interface TaskNodeConfigV0 {
 }
 
 export type TaskNodeConfig = TaskNodeConfigV0;
+
+export type ExecStatus =
+	| "pending"
+	| "running"
+	| "completed"
+	| "failed"
+	| "cancelled";
+
+export type PipelineExecNotificationType = "pipeline" | "node";
+
+export interface PipelineExec {
+	id: string;
+	pipelineId: string;
+	status: ExecStatus;
+	createdAt: Date;
+	startedAt: Date;
+	finishedAt: Date;
+}
+
+export interface PipelineExecNode {
+	id: string;
+	pipelineExecId: string;
+	pipelineNodeId: string;
+	status: ExecStatus;
+	result: Record<string, unknown>;
+	createdAt: Date;
+	startedAt: Date;
+	finishedAt: Date;
+}
+
+export type PipelineExecNotification =
+	| {
+			type: "pipeline";
+			data: PipelineExec;
+	  }
+	| {
+			type: "node";
+			data: PipelineExecNode;
+	  };

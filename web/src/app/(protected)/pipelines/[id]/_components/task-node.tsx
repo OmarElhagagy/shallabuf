@@ -5,22 +5,18 @@ import {
 	Image as ImageIcon,
 	Text as TextIcon,
 } from "lucide-react";
+import { NodeInput } from "~/components/features/pipeline/node-input";
 import { Card, CardContent, CardHeader, CardTitle } from "~/components/ui/card";
-import { Input } from "~/components/ui/input";
 import { Separator } from "~/components/ui/separator";
-import {
-	type Pipeline,
-	type TaskNodeConfig,
-	isTaskNodeConfigV0InputBinary,
-	isTaskNodeConfigV0InputSelect,
-	isTaskNodeConfigV0InputText,
-} from "~/lib/dtos";
-import { SelectInput } from "./select-input";
+import type { ExecStatus, Pipeline, TaskNodeConfig } from "~/lib/dtos";
 
 export type TaskNodeProps = Node<
 	{
 		name: string;
-		config: TaskNodeConfig;
+		execStatus?: ExecStatus;
+		result?: Record<string, unknown>;
+		config?: TaskNodeConfig;
+		triggerId?: string;
 		inputs: Array<
 			Pipeline["nodes"][number]["inputs"][number] & { controlled: boolean }
 		>;
@@ -33,12 +29,17 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>{data.name}</CardTitle>
+				<CardTitle>
+					{data.name} {data.execStatus}
+				</CardTitle>
 			</CardHeader>
 
 			<CardContent>
-				{data.config.inputs.map(({ key, label, input }) => {
+				{data.config?.inputs.map(({ key, label, input }) => {
 					const inputHandle = data.inputs.find((input) => input.key === key);
+
+					const willBeComputed =
+						inputHandle?.controlled || Boolean(data.triggerId);
 
 					return (
 						<div key={key} className="relative [&:not(:first-child)]:mt-2">
@@ -54,32 +55,18 @@ export const TaskNode = ({ data, isConnectable }: NodeProps<TaskNodeProps>) => {
 								}}
 							/>
 
-							<Label>{label.en}</Label>
-
-							{isTaskNodeConfigV0InputText(input) && (
-								<Input
-									disabled={inputHandle?.controlled}
-									defaultValue={input.text.default}
-									placeholder={
-										inputHandle?.controlled ? "Will be computed" : ""
-									}
-								/>
-							)}
-
-							{isTaskNodeConfigV0InputSelect(input) && (
-								<SelectInput {...input.select} />
-							)}
-
-							{isTaskNodeConfigV0InputBinary(input) && (
-								<Input type="file" accept="image/*" />
-							)}
+							<NodeInput
+								label={label.en}
+								input={input}
+								willBeComputed={willBeComputed}
+							/>
 						</div>
 					);
 				})}
 
 				<Separator className="my-4" />
 
-				{data.config.outputs.map(({ key, label, output }) => (
+				{data.config?.outputs.map(({ key, label, output }) => (
 					<div
 						key={key}
 						className="relative flex items-center [&:not(:first-child)]:mt-2"

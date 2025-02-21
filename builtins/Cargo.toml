@@ -1,0 +1,31 @@
+[package]
+name = "builtins"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "echo"
+path = "src/bin/echo.rs"
+
+[[bin]]
+name = "generate-image"
+path = "src/bin/generate_image.rs"
+
+[[bin]]
+name = "text-transformer"
+path = "src/bin/text_transformer.rs"
+
+[[bin]]
+name = "post-to-facebook"
+path = "src/bin/post_to_facebook.rs"
+
+[[bin]]
+name = "btc-price"
+path = "src/bin/btc-price.rs"
+
+[dependencies]
+serde = { version = "^1", features = ["derive"] }
+serde_json = "^1"
+anyhow = "^1"
+reqwest = { version = "^0.12", features = ["json", "blocking"] }
+tokio = { version = "^1", features = ["sync", "macros", "io-util", "rt", "time"] }

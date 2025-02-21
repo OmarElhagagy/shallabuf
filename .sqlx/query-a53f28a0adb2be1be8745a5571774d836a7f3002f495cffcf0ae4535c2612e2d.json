@@ -1,0 +1,52 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.id, p.name, p.description,\n            pt.id AS trigger_id, pt.coords as trigger_coords, pt.config AS trigger_config\n        FROM\n            pipelines p\n        LEFT JOIN\n            pipeline_triggers pt ON pt.pipeline_id = p.id\n        WHERE\n            p.id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "trigger_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 4,
+        "name": "trigger_coords",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 5,
+        "name": "trigger_config",
+        "type_info": "Jsonb"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a53f28a0adb2be1be8745a5571774d836a7f3002f495cffcf0ae4535c2612e2d"
+}

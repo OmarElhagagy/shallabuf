@@ -3,15 +3,15 @@ import { Providers } from "~/app/(protected)/_providers";
 import { getSessionToken } from "~/lib/auth";
 
 export default async function RootLayout({
-	children,
+  children,
 }: Readonly<{
-	children: React.ReactNode;
+  children: React.ReactNode;
 }>) {
-	const session_token = await getSessionToken();
+  const session_token = await getSessionToken();
 
-	if (!session_token) {
-		return redirect("/auth/login");
-	}
+  if (!session_token) {
+    return redirect("/auth/login");
+  }
 
-	return <Providers session_token={session_token}>{children}</Providers>;
+  return <Providers session_token={session_token}>{children}</Providers>;
 }

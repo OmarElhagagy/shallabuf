@@ -8,6 +8,7 @@ import {
 import {
 	Background,
 	BackgroundVariant,
+	type Edge,
 	type OnConnect,
 	Panel,
 	ReactFlow,
@@ -19,6 +20,7 @@ import {
 } from "@xyflow/react";
 import { MousePointer2 } from "lucide-react";
 import { useParams } from "next/navigation";
+import { useQueryState } from "nuqs";
 import React, {
 	type MouseEvent,
 	useCallback,
@@ -27,15 +29,26 @@ import React, {
 	useState,
 } from "react";
 import { useShallow } from "zustand/react/shallow";
-import { createPipelineNodeAction } from "~/app/actions/create-pipeline-node";
-import { createPipelineNodeConnectionAction } from "~/app/actions/create-pipeline-node-connection";
-import { updatePipelineNodeAction } from "~/app/actions/update-pipeline-node";
+import { createPipelineNodeAction } from "~/actions/create-pipeline-node";
+import { createPipelineNodeConnectionAction } from "~/actions/create-pipeline-node-connection";
+import { createPipelineTriggerConnectionAction } from "~/actions/create-pipeline-trigger-connection";
+import { updatePipelineNodeAction } from "~/actions/update-pipeline-node";
+import { updatePipelineTriggerAction } from "~/actions/update-pipeline-trigger";
 import { useWsStore } from "~/contexts/ws-store-context";
-import type { Node, PipelineNode, PipelineParticipant } from "~/lib/dtos";
+import { env } from "~/env";
+import {
+	type Node,
+	NodeType,
+	type PipelineExecNotification,
+	type PipelineNode,
+	type PipelineNodeConnection,
+	type PipelineParticipant,
+} from "~/lib/dtos";
 import type { WsStoreState } from "~/stores/ws-store";
 import { Dropzone } from "./dropzone";
 import { NodeItem } from "./node-item";
 import { TaskNode } from "./task-node";
+import { TriggerNode } from "./trigger-node";
 
 export interface EditorProps {
 	nodes: Parameters<typeof useNodesState>[0];
@@ -46,6 +59,7 @@ export interface EditorProps {
 
 const nodeTypes: ReactFlowProps["nodeTypes"] = {
 	task: TaskNode,
+	trigger: TriggerNode,
 };
 
 export const Editor = (props: EditorProps) => {
@@ -53,6 +67,91 @@ export const Editor = (props: EditorProps) => {
 	const [edges, setEdges, onEdgesChange] = useEdgesState(props.edges);
 	const params = useParams();
 	const pipelineId = params.id as string;
+	const [execId, setExecId] = useQueryState("exec");
+
+	const clearTaskNodes = useCallback(() => {
+		setNodes((nodes) => {
+			return nodes.map((node) => {
+				if (node.type === NodeType.Task) {
+					return {
+						...node,
+						data: {
+							...node.data,
+							execStatus: undefined,
+							result: undefined,
+						},
+					};
+				}
+
+				return node;
+			});
+		});
+	}, [setNodes]);
+
+	useEffect(() => {
+		if (execId) {
+			const eventSource = new EventSource(
+				`${env.NEXT_PUBLIC_API_URL}/pipeline-execs/${execId}/events`,
+			);
+
+			eventSource.onmessage = (event) => {
+				const notification: PipelineExecNotification = JSON.parse(event.data);
+
+				if (notification.type === "pipeline") {
+					setNodes((nodes) => {
+						return nodes.map((node) => {
+							if (node.type === NodeType.Trigger) {
+								return {
+									...node,
+									data: {
+										...node.data,
+										execStatus: notification.data.status,
+									},
+								};
+							}
+
+							return node;
+						});
+					});
+
+					if (
+						notification.data.status === "completed" ||
+						notification.data.status === "failed" ||
+						notification.data.status === "cancelled"
+					) {
+						setExecId(null);
+						// clearTaskNodes();
+						eventSource.close();
+					}
+				}
+
+				if (notification.type === "node") {
+					setNodes((nodes) => {
+						return nodes.map((node) => {
+							if (node.id === notification.data.pipelineNodeId) {
+								return {
+									...node,
+									data: {
+										...node.data,
+										result: notification.data.result,
+										execStatus: notification.data.status,
+									},
+								};
+							}
+
+							return node;
+						});
+					});
+				}
+			};
+
+			eventSource.onerror = (event) => {
+				setExecId(null);
+				// clearTaskNodes();
+				console.error(event);
+			};
+		}
+	}, [execId, setNodes, setExecId]);
 
 	const [
 		participants,
@@ -96,23 +195,79 @@ export const Editor = (props: EditorProps) => {
 
 	const onConnect: OnConnect = useCallback(
 		async (params) => {
-			const connection = await createPipelineNodeConnectionAction({
-				fromNodeId: params.source,
-				toNodeId: params.target,
-			});
+			const commonEdgeParams: Partial<Edge> = {
+				animated: true,
+				deletable: true,
+				focusable: true,
+				selectable: true,
+			};
 
-			setEdges((eds) => {
-				return addEdge(
-					{
-						...params,
-						source: connection.fromNodeId,
-						target: connection.toNodeId,
-					},
-					eds,
-				);
-			});
+			if (
+				nodes.find((node) => node.id === params.source)?.type ===
+				NodeType.Trigger
+			) {
+				const pipelineNode: PipelineNode =
+					await createPipelineTriggerConnectionAction({
+						triggerId: params.source,
+						nodeId: params.target,
+					});
+
+				setNodes((nodes) => {
+					return nodes.map((node) => {
+						if (node.id === pipelineNode.id) {
+							return {
+								...node,
+								data: {
+									...node.data,
+									triggerId: pipelineNode.triggerId,
+								},
+							};
+						}
+
+						return node;
+					});
+				});
+
+				setEdges((eds) => {
+					return addEdge(
+						{
+							...commonEdgeParams,
+							id: pipelineNode.triggerId ?? "",
+							source: pipelineNode.triggerId ?? "",
+							target: pipelineNode.id,
+						},
+						eds,
+					);
+				});
+			} else {
+				console.log(params);
+
+				if (!params.sourceHandle || !params.targetHandle) {
+					return;
+				}
+
+				const connection: PipelineNodeConnection =
+					await createPipelineNodeConnectionAction({
+						fromPipelineNodeOutputId: params.sourceHandle,
+						toPipelineNodeInputId: params.targetHandle,
+					});
+
+				setEdges((eds) => {
+					return addEdge(
+						{
+							...commonEdgeParams,
+							id: connection.id,
+							source: params.source,
+							target: params.target,
+							sourceHandle: connection.fromPipelineNodeOutputId,
+							targetHandle: connection.toPipelineNodeInputId,
+						},
+						eds,
+					);
+				});
+			}
 		},
-		[setEdges],
+		[nodes, setEdges, setNodes],
 	);
 
 	useEffect(() => {
@@ -150,13 +305,23 @@ export const Editor = (props: EditorProps) => {
 	const saveNodePosition: NonNullable<
 		Parameters<typeof ReactFlow>[0]["onNodeDragStop"]
 	> = useCallback(async (_event, node) => {
-		await updatePipelineNodeAction({
-			id: node.id,
-			coords: {
-				x: node.position.x,
-				y: node.position.y,
-			},
-		});
+		if (node.type === NodeType.Trigger) {
+			await updatePipelineTriggerAction({
+				id: node.id,
+				coords: {
+					x: node.position.x,
+					y: node.position.y,
+				},
+			});
+		} else {
+			await updatePipelineNodeAction({
+				id: node.id,
+				coords: {
+					x: node.position.x,
+					y: node.position.y,
+				},
+			});
+		}
 	}, []);
 
 	const { getViewport } = useReactFlow();
@@ -195,13 +360,19 @@ export const Editor = (props: EditorProps) => {
 		const pipelineNode: PipelineNode = await createPipelineNodeAction({
 			pipelineId,
 			nodeId: draggableNodeItem.toString(),
-			nodeVersion: "latest",
+			nodeVersion: "v1",
 			// FIXME: This should be the actual cursor position
 			coords: {
 				x: 250,
 				y: 25,
 			},
 		});
+
+		console.log(pipelineNode);
+
+		const node = props.availableNodes.find(
+			(node) => node.id === pipelineNode.nodeId,
+		);
 
 		setDraggableNodeItem("");
 
@@ -211,13 +382,17 @@ export const Editor = (props: EditorProps) => {
 				{
 					id: pipelineNode.id,
 					position: pipelineNode.coords,
+					type: NodeType.Task,
 					data: {
-						label: pipelineNode.id,
+						name: `${node?.name}:${pipelineNode.nodeVersion}`,
+						config: node?.config,
+						inputs: pipelineNode.inputs,
+						outputs: pipelineNode.outputs,
 					},
 				},
 			];
 		});
-	}, [draggableNodeItem, pipelineId, setNodes]);
+	}, [draggableNodeItem, pipelineId, props.availableNodes, setNodes]);
 
 	return (
 		<div className="w-full h-full relative">

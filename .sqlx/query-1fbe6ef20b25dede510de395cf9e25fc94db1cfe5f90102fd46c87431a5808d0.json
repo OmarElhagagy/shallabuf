@@ -21,7 +21,7 @@
       {
         "ordinal": 3,
         "name": "config",
-        "type_info": "Json"
+        "type_info": "Jsonb"
       }
     ],
     "parameters": {

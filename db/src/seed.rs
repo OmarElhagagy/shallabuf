@@ -9,6 +9,8 @@ use crate::dtos::{
     KeyProviderType, NodeConfig, NodeConfigV0, NodeContainerType, NodeInput, NodeInputType,
     NodeOutput, NodeOutputType, PipelineTriggerConfig, PipelineTriggerConfigV0, SelectInput,
 };
+use aws_sdk_s3::error::SdkError;
+use aws_sdk_s3::types::BucketVersioningStatus;
 use sqlx::PgPool;
 
 /// Seeds the database with initial data.
@@ -19,6 +21,91 @@ use sqlx::PgPool;
 /// or if a json config serialization fails.
 #[allow(clippy::too_many_lines)]
 pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
+    // Setup S3 client
+    let minio_endpoint = std::env::var("MINIO_ENDPOINT").expect("MINIO_ENDPOINT must be set");
+    let minio_access_key = std::env::var("MINIO_ACCESS_KEY").expect("MINIO_ACCESS_KEY must be set");
+    let minio_secret_key = std::env::var("MINIO_SECRET_KEY").expect("MINIO_SECRET_KEY must be set");
+
+    let s3_config = aws_sdk_s3::config::Builder::new()
+        .endpoint_url(minio_endpoint)
+        .force_path_style(true)
+        .credentials_provider(aws_sdk_s3::config::Credentials::new(
+            minio_access_key,
+            minio_secret_key,
+            None,
+            None,
+            "",
+        ))
+        .region(aws_sdk_s3::config::Region::new("us-east-1"))
+        .behavior_version_latest()
+        .build();
+
+    let s3_client = aws_sdk_s3::Client::from_conf(s3_config);
+
+    // Check if the bucket exists, and create it if it does not
+    let bucket_name = "builtins";
+    match s3_client.head_bucket().bucket(bucket_name).send().await {
+        Ok(_) => {}
+        Err(ref error) => {
+            if matches!(error, SdkError::ServiceError(ref err) if err.err().is_not_found()) {
+                s3_client.create_bucket().bucket(bucket_name).send().await?;
+
+                // Enable versioning on the bucket
+                s3_client
+                    .put_bucket_versioning()
+                    .bucket(bucket_name)
+                    .versioning_configuration(
+                        aws_sdk_s3::types::VersioningConfiguration::builder()
+                            .status(BucketVersioningStatus::Enabled)
+                            .build(),
+                    )
+                    .send()
+                    .await?;
+            } else {
+                return Err(anyhow::anyhow!(error.to_string()));
+            }
+        }
+    }
+
+    let echo_wasm_path = "./builtins/echo.wasm";
+    let echo_body = tokio::fs::read(echo_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("echo:v1.wasm")
+        .body(echo_body.into())
+        .send()
+        .await?;
+
+    let echo_wasm_id = put_object_output.version_id().unwrap_or_default();
+
+    let text_transformer_wasm_path = "./builtins/text-transformer.wasm";
+    let text_transformer_body = tokio::fs::read(text_transformer_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("text-transformer:v1.wasm")
+        .body(text_transformer_body.into())
+        .send()
+        .await?;
+
+    let text_transform_wasm_id = put_object_output.version_id().unwrap_or_default();
+
+    let btc_price_wasm_path = "./builtins/btc-price.wasm";
+    let btc_price_body = tokio::fs::read(btc_price_wasm_path).await?;
+
+    let put_object_output = s3_client
+        .put_object()
+        .bucket(bucket_name)
+        .key("btc-price:v1.wasm")
+        .body(btc_price_body.into())
+        .send()
+        .await?;
+
+    let btc_price_wasm_id = put_object_output.version_id().unwrap_or_default();
+
     // Define predetermined UUIDs
     let organization_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174000").unwrap();
     let team_id = Uuid::parse_str("123e4567-e89b-12d3-a456-426614174001").unwrap();
@@ -166,11 +253,15 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let pipeline_trigger = sqlx::query!(
         r#"
-        INSERT INTO pipeline_triggers (pipeline_id, config)
-        VALUES ($1, $2)
+        INSERT INTO pipeline_triggers (pipeline_id, coords, config)
+        VALUES ($1, $2, $3)
         RETURNING id
         "#,
         pipeline.id,
+        serde_json::json!({
+            "x": -154,
+            "y": -112,
+        }),
         pipeline_trigger_config
     )
     .fetch_one(db)
@@ -205,16 +296,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let echo_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Echo",
         "echo",
         Some("A simple node that echoes the message it receives.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        echo_node_config
+        echo_node_config,
+        echo_wasm_id
     )
     .fetch_one(db)
     .await?;
@@ -281,49 +373,35 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let transformer_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
-        "Transformer",
-        "transformer",
+        "Text transformer",
+        "text-transformer",
         Some("A simple node that transforms the message it receives.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        transformer_node_config
+        transformer_node_config,
+        text_transform_wasm_id
     )
     .fetch_one(db)
     .await?;
 
     let image_generator_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
-        inputs: vec![
-            NodeInput {
-                key: "width".to_string(),
-                input: NodeInputType::Text {
-                    default: Some("800".to_string()),
-                },
-                label: {
-                    let mut map = HashMap::new();
-                    map.insert("en".to_string(), "Width".to_string());
-                    Some(map)
-                },
-                description: None,
-                required: false,
+        inputs: vec![NodeInput {
+            key: "prompt".to_string(),
+            input: NodeInputType::Text {
+                default: Some("The quick brown fox jumps over the lazy dog".to_string()),
             },
-            NodeInput {
-                key: "height".to_string(),
-                input: NodeInputType::Text {
-                    default: Some("600".to_string()),
-                },
-                label: {
-                    let mut map = HashMap::new();
-                    map.insert("en".to_string(), "Height".to_string());
-                    Some(map)
-                },
-                description: None,
-                required: false,
+            label: {
+                let mut map = HashMap::new();
+                map.insert("en".to_string(), "Prompt".to_string());
+                Some(map)
             },
-        ],
+            description: None,
+            required: false,
+        }],
         outputs: vec![NodeOutput {
             key: "image".to_string(),
             output: NodeOutputType::Binary,
@@ -339,16 +417,17 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let image_generator_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Image Generator",
         "image_generator",
         Some("A simple node that generates an image.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        image_generator_node_config
+        image_generator_node_config,
+        "FIXME"
     )
     .fetch_one(db)
     .await?;
@@ -395,16 +474,49 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let post_to_fb_node = sqlx::query!(
         r#"
-        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING id
         "#,
         "Post to Facebook",
         "post_to_fb",
         Some("A simple node that posts to Facebook.".to_string()),
-        "shallabuf",
+        "builtins",
         NodeContainerType::Wasm as NodeContainerType,
-        post_to_fb_node_config
+        post_to_fb_node_config,
+        "FIXME"
+    )
+    .fetch_one(db)
+    .await?;
+
+    let btc_price_node_config = serde_json::to_value(NodeConfig::V0(NodeConfigV0 {
+        inputs: vec![],
+        outputs: vec![NodeOutput {
+            key: "price".to_string(),
+            output: NodeOutputType::Text,
+            label: {
+                let mut map = HashMap::new();
+                map.insert("en".to_string(), "Price".to_string());
+                Some(map)
+            },
+            description: None,
+        }],
+    }))
+    .unwrap();
+
+    let btc_price_node = sqlx::query!(
+        r#"
+        INSERT INTO nodes (name, identifier_name, description, publisher_name, container_type, config, version_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING id
+        "#,
+        "BTC Price",
+        "btc-price",
+        Some("A simple node that fetches the current BTC price.".to_string()),
+        "builtins",
+        NodeContainerType::Wasm as NodeContainerType,
+        btc_price_node_config,
+        btc_price_wasm_id
     )
     .fetch_one(db)
     .await?;
@@ -427,26 +539,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    let _echo_pipeline_node_input_message = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        echo_pipeline_node.id,
-        echo_node_config["inputs"][0]["key"].as_str().unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
     let echo_pipeline_node_output_echoed = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        echo_pipeline_node.id,
-        echo_node_config["outputs"][0]["key"].as_str().unwrap(),
+        echo_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -470,42 +568,20 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let transform_pipeline_node_input_message = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1
         "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["inputs"][0]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _transform_pipeline_node_input_transformer = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["inputs"][1]["key"]
-            .as_str()
-            .unwrap(),
+        transformer_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
 
     let transform_pipeline_node_output_transformed = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        transformer_pipeline_node.id,
-        transformer_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        transformer_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -540,38 +616,20 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
 
     let post_to_fb_pipeline_node_input_message = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1 AND key = 'message'
         "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["inputs"][0]["key"].as_str().unwrap(),
+        post_to_fb_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
 
     let post_to_fb_pipeline_node_input_media = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_inputs
+        WHERE pipeline_node_id = $1 AND key = 'media'
         "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["inputs"][1]["key"].as_str().unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _post_to_fb_pipeline_node_output_posted = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        post_to_fb_pipeline_node.id,
-        post_to_fb_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        post_to_fb_pipeline_node.id
     )
     .fetch_one(db)
     .await?;
@@ -604,44 +662,12 @@ pub async fn seed_database(db: &PgPool) -> anyhow::Result<()> {
     .fetch_one(db)
     .await?;
 
-    let _image_generator_pipeline_node_input_width = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["inputs"][0]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
-    let _image_generator_pipeline_node_input_height = sqlx::query!(
-        r#"
-        INSERT INTO pipeline_node_inputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
-        "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["inputs"][1]["key"]
-            .as_str()
-            .unwrap(),
-    )
-    .fetch_one(db)
-    .await?;
-
     let image_generator_pipeline_node_output_image = sqlx::query!(
         r#"
-        INSERT INTO pipeline_node_outputs (pipeline_node_id, key)
-        VALUES ($1, $2)
-        RETURNING id
+        SELECT id FROM pipeline_node_outputs
+        WHERE pipeline_node_id = $1
         "#,
-        image_generator_pipeline_node.id,
-        image_generator_node_config["outputs"][0]["key"]
-            .as_str()
-            .unwrap(),
+        image_generator_pipeline_node.id
     )
     .fetch_one(db)
     .await?;

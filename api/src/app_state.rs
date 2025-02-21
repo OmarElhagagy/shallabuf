@@ -12,9 +12,10 @@ use uuid::Uuid;
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::Pool<sqlx::Postgres>,
-    pub jetstream: JetStream,
-    pub broadcast: Broadcast,
     pub redis: redis::aio::ConnectionManager,
+    pub jetstream: async_nats::jetstream::Context,
+    pub ws_messages_broadcast: WsMessagesBroadcast,
+    pub exec_events_consumer: ExecEventsConsumer,
 }
 
 pub struct DatabaseConnection(pub sqlx::pool::PoolConnection<sqlx::Postgres>);
@@ -41,12 +42,19 @@ where
     }
 }
 
-#[derive(Clone)]
 pub struct JetStream(pub async_nats::jetstream::Context);
 
-impl FromRef<AppState> for JetStream {
-    fn from_ref(state: &AppState) -> Self {
-        Self(state.jetstream.0.clone())
+#[async_trait]
+impl<S> FromRequestParts<S> for JetStream
+where
+    AppState: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, String);
+
+    async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let state = AppState::from_ref(state);
+        Ok(Self(state.jetstream.clone()))
     }
 }
 
@@ -171,11 +179,11 @@ pub enum WsClientAction {
 }
 
 #[derive(Clone)]
-pub struct Broadcast(pub broadcast::Sender<BroadcastEvent>);
+pub struct WsMessagesBroadcast(pub broadcast::Sender<BroadcastEvent>);
 
-impl FromRef<AppState> for Broadcast {
+impl FromRef<AppState> for WsMessagesBroadcast {
     fn from_ref(state: &AppState) -> Self {
-        Self(state.broadcast.0.clone())
+        Self(state.ws_messages_broadcast.0.clone())
     }
 }
 
@@ -192,5 +200,24 @@ where
     async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let state = AppState::from_ref(state);
         Ok(Self(state.redis.clone()))
+    }
+}
+
+#[derive(Clone)]
+pub struct ExecEventsConsumer(
+    pub async_nats::jetstream::consumer::Consumer<async_nats::jetstream::consumer::pull::Config>,
+);
+
+#[async_trait]
+impl<S> FromRequestParts<S> for ExecEventsConsumer
+where
+    AppState: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = (StatusCode, String);
+
+    async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let state = AppState::from_ref(state);
+        Ok(Self(state.exec_events_consumer.0.clone()))
     }
 }

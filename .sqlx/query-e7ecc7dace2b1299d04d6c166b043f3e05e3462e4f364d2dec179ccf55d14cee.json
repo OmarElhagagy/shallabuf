@@ -1,0 +1,47 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            users.id, users.name, users.password_hash\n        FROM\n            users\n        JOIN\n            keys ON keys.user_id = users.id\n        WHERE\n            users.email = $1\n        AND\n            keys.provider = $2\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        {
+          "Custom": {
+            "name": "key_provider_type",
+            "kind": {
+              "Enum": [
+                "password",
+                "github",
+                "google",
+                "facebook"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "e7ecc7dace2b1299d04d6c166b043f3e05e3462e4f364d2dec179ccf55d14cee"
+}
