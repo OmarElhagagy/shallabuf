@@ -4,7 +4,7 @@ use async_nats::{
     jetstream::{self},
 };
 use axum::{
-    routing::{get, post},
+    routing::{get, post, delete},
     Router,
 };
 use db::seed::seed_database;
@@ -166,6 +166,10 @@ async fn main() -> io::Result<()> {
         .route(
             "/pipeline-nodes/:id",
             post(routes::api::v0::pipeline_nodes::update),
+        )
+        .route(
+            "/pipeline-nodes/:id",
+            delete(routes::api::v0::pipeline_nodes::delete)
         )
         .route(
             "/pipeline-node-connections",
