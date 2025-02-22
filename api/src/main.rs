@@ -146,6 +146,8 @@ async fn main() -> io::Result<()> {
 
     let api_v0 = Router::new()
         .route("/auth/login", post(routes::api::v0::auth::login))
+        .route("/auth/logout", post(routes::api::v0::auth::logout))
+        .route("/auth/session", get(routes::api::v0::auth::session))
         .route("/teams", get(routes::api::v0::teams::list))
         .route("/pipelines", get(routes::api::v0::pipelines::list))
         .route("/pipelines", post(routes::api::v0::pipelines::create))

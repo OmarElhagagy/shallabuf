@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { LogoutButton } from "~/components/features/auth/logout-button";
 import { CreatePipelineDialog } from "~/components/features/pipeline/create-pipeline-dialog";
 import { env } from "~/env";
 import { getSessionToken } from "~/lib/auth";
@@ -43,6 +45,7 @@ export default async function Home() {
       <header className="flex items-center justify-center gap-4">
         <h1 className="text-3xl font-bold text-center">Pipelines</h1>
         <CreatePipelineDialog teamId={teams[0].id} />
+        <LogoutButton />
       </header>
 
       <ul className="w-full max-w-2xl">
@@ -53,7 +56,7 @@ export default async function Home() {
           >
             <h2 className="text-xl font-bold mb-2">{pipeline.name}</h2>
             <p className="text-gray-700">{pipeline.description}</p>
-            <a href={`/pipelines/${pipeline.id}`}>Edit</a>
+            <Link href={`/pipelines/${pipeline.id}`}>Edit</Link>
           </li>
         ))}
       </ul>
