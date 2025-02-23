@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::info;
 use uuid::Uuid;
+use sqlx::Acquire;
 
 use crate::{
     app_state::{Coords, DatabaseConnection},
@@ -68,18 +69,18 @@ pub async fn delete(
     DatabaseConnection(mut conn): DatabaseConnection,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
-    info!("Attempting to delete pipeline node: {}", id);
+    info!("Attempting to delete pipeline node: {id}");
 
     let mut tx = conn
         .begin()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
+        .map_err(internal_error)?;
 
     // Check if node exists
     let node_exists = sqlx::query!("SELECT id FROM pipeline_nodes WHERE id = $1", id)
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?
+        .map_err(internal_error)?
         .is_some();
 
     if !node_exists {
@@ -91,40 +92,17 @@ pub async fn delete(
         ));
     }
 
-    // Delete connections
-    sqlx::query!(
-        r#"
-        DELETE FROM pipeline_node_connections
-        WHERE source_node_id = $1 OR target_node_id = $1
-        "#,
-        id
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
-
-    // Delete inputs and outputs
-    sqlx::query!("DELETE FROM pipeline_node_inputs WHERE pipeline_node_id = $1", id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
-
-    sqlx::query!("DELETE FROM pipeline_node_outputs WHERE pipeline_node_id = $1", id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
-
-    // Delete the node
+    // Delete the node (dependencies handled by ON DELETE CASCADE)
     sqlx::query!("DELETE FROM pipeline_nodes WHERE id = $1", id)
         .execute(&mut *tx)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
+        .map_err(internal_error)?;
 
     tx.commit()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(ApiError::from(e))))?;
+        .map_err(internal_error)?;
 
-    info!("Successfully deleted pipeline node: {}", id);
+    info!("Successfully deleted pipeline node: {id}");
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -257,14 +235,12 @@ mod tests {
         let mut conn = DatabaseConnection(pool.acquire().await.unwrap());
 
         // Insert test data
-        let pipeline_id = Uuid::new_v4();
-        let node_id = Uuid::new_v4();
         let id = Uuid::new_v4();
         sqlx::query!(
             "INSERT INTO pipeline_nodes (id, pipeline_id, node_id, node_version, coords) VALUES ($1, $2, $3, $4, $5)",
             id,
-            pipeline_id,
-            node_id,
+            Uuid::new_v4,
+            Uuid::new_v4,
             "1.0",
             serde_json::json!({"x": 0, "y": 0})
         )
